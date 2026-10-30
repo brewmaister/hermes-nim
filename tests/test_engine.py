@@ -1033,6 +1033,67 @@ class ScanTests(unittest.TestCase):
         self._scan({})
         self.assertEqual(self._caps(recheck=8), {"nvidia/a": 25, "nvidia/b": 25})
 
+    def test_a_survey_measures_every_listed_model_once(self):
+        """The board needs all 85 measured, but only the models you point at may raise an alert."""
+        probed: list[tuple[str, int, float]] = []
+
+        def fake_probe(_base, model, _key, ttft, attempts, _stagger):
+            probed.append((model, attempts, ttft))
+            status = "ok" if model == "nvidia/a" else "http_404"
+            return {"model": model, "status": status, "ok_attempts": 1, "attempts": attempts,
+                    "ttft_s": 0.4 if status == "ok" else None,
+                    "trials": ["ok:0.4"] if status == "ok" else ["http_404"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        catalog = ["nvidia/a", "nvidia/b", "cloud/one", "cloud/two"]
+        with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                mock.patch.object(engine, "catalog", return_value=catalog):
+            report = engine.scan(ttft=25, attempts=2, stagger=0, key="k", config_path=self.config,
+                                 configured_dir=self.state_dir, survey=True, survey_ttft=10)
+        self.assertEqual(sorted(model for model, _, _ in probed), sorted(catalog))
+        # catalog-only models: one attempt, the survey cap. Configured ones keep the real policy.
+        caps = {model: (attempts, ttft) for model, attempts, ttft in probed}
+        self.assertEqual(caps["nvidia/a"], (2, 25))
+        self.assertEqual(caps["cloud/one"], (1, 10))
+        # nobody in config → no alert may be produced by a survey of strangers
+        self.assertEqual(report["changes"], [])
+
+    def test_chat_views_stay_on_the_models_you_point_at_after_a_survey(self):
+        """A stored survey holds 85 verdicts; `/nim` must not turn into a catalog dump."""
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+            return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
+                    "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                mock.patch.object(engine, "catalog",
+                                  return_value=["nvidia/a", "nvidia/b", "cloud/one", "cloud/two"]):
+            report = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
+                                 configured_dir=self.state_dir, survey=True, survey_ttft=1)
+        self.assertEqual(len(report["models"]), 4)          # everything was measured
+        cached = render.render_cached(report)
+        self.assertNotIn("cloud/one", cached)               # strangers stay out of the chat view
+        self.assertIn(" nvidia/a", cached.replace("—", " "))
+        board = render.render_catalog(report)
+        self.assertIn("✓ 4 answering", board)               # but the board shows all four
+
+    def test_a_survey_never_alerts_about_models_you_do_not_point_at(self):
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+            return {"model": model, "status": "http_404", "ok_attempts": 0, "attempts": attempts,
+                    "ttft_s": None, "trials": ["http_404"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                mock.patch.object(engine, "catalog", return_value=["cloud/one"]):
+            first = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
+                                configured_dir=self.state_dir, survey=True, survey_ttft=1)
+            second = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
+                                 configured_dir=self.state_dir, survey=True, survey_ttft=1)
+        # the two models in config may speak (they are yours); the stranger in the catalog may not
+        self.assertFalse([c for c in first["changes"] if "cloud/one" in c])
+        self.assertFalse([c for c in second["changes"] if "cloud/one" in c])
+        self.assertEqual(second["models"]["cloud/one"]["status"], "http_404")  # still recorded
+
     def test_recheck_can_be_disabled(self):
         self._caps(recheck=0)
         self.assertEqual(self._caps(recheck=0), {"nvidia/a": 25, "nvidia/b": 25})

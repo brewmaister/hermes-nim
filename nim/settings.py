@@ -37,6 +37,14 @@ class Settings:
     # Re-confirming a death is a cheaper question than the first verdict: a model already marked dead
     # is probed with this shorter first-byte cap instead of ttft_seconds. 0 disables the shortcut.
     recheck_ttft_seconds: float = 8.0
+    # A survey measures every model NVIDIA lists, so it must not inherit the fallback-chain cap: a
+    # catalog sweep that waited 25 s on each black hole would take an hour. 10 s is enough to tell
+    # "answers" from "does not", which is the only question the catalog view asks.
+    survey_ttft_seconds: float = 10.0
+    survey_workers: int = 10
+    # The watchdog sweeps the whole catalog; the chat view stays on the models you configured.
+    survey_catalog: bool = True
+    survey_attempts: int = 1
     # One attempt for the interactive view: two samples doubled the worst case to ~50 s, and a model
     # that black-holes for 25 s is unusable in chat whether or not a second attempt agrees. The
     # hysteresis still needs two *runs* before anything is called dead, so this cannot fake a death.
@@ -168,6 +176,10 @@ def settings() -> Settings:
                                      values.live_grace_seconds),
         recheck_ttft_seconds=_as_float(configured.get("recheck_ttft_seconds"),
                                        values.recheck_ttft_seconds),
+        survey_ttft_seconds=_as_float(configured.get("survey_ttft_seconds"),
+                                      values.survey_ttft_seconds),
+        survey_workers=_as_int(configured.get("survey_workers"), values.survey_workers),
+        survey_catalog=_as_bool(configured.get("survey_catalog"), values.survey_catalog),
         live_attempts=_as_int(configured.get("live_attempts"), values.live_attempts),
         language=str(configured.get("language") or values.language),
     )

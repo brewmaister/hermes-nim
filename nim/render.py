@@ -142,6 +142,23 @@ def short_where(where: list[str]) -> str:
     return ", ".join(seen)
 
 
+def watched(report: dict) -> dict:
+    """The report narrowed to models you actually point at (config or shortlist).
+
+    A survey measures the whole catalog and stores every verdict, so the raw report can hold 85
+    models. Chat views must not: a stranger's verdict is not your uptime, and a recommendation drawn
+    from models you do not use is advice to change providers, not to fix a fallback chain.
+    """
+    used = report.get("configured_in")
+    if not used:
+        # No map at all (an older state file, or a hand-built report): we cannot tell watched from
+        # stranger, so show what we have rather than an empty list that reads like "all dead".
+        return report
+    watched_models = {model: result for model, result in (report.get("models") or {}).items()
+                      if model in used}
+    return {**report, "models": watched_models}
+
+
 def _grouped(report: dict) -> tuple[list[dict], list[dict], list[dict]]:
     models = list((report.get("models") or {}).values())
     alive = [m for m in models if engine.severity(m) == "ok"]
@@ -293,6 +310,7 @@ def changes_block(report: dict) -> list[str]:
 def render_probe(report: dict) -> str:
     if report.get("error"):
         return t("empty.error", error=report["error"])
+    report = watched(report)
     banner = credential_block(report)
     if banner:
         return "\n".join([t("header.aborted"), ""] + banner)
@@ -319,6 +337,7 @@ def render_cached(report: dict) -> str:
         return t("empty.no_scan")
     if report.get("error"):
         return t("empty.error", error=report["error"])
+    report = watched(report)
     banner = credential_block(report)
     if banner:
         lines = [t("header.known", models=len(report.get("models") or {})), ""] + banner + [""]
@@ -340,22 +359,45 @@ def render_cached(report: dict) -> str:
     return "\n".join(lines)
 
 
-def render_catalog(report: dict) -> str:
+def render_catalog(report: dict, limit: int = 12) -> str:
+    """What NVIDIA lists, and what actually answers — the online/offline board.
+
+    Fed by a survey (every catalog id probed once). Without a survey the verdicts are simply absent,
+    and the view says so instead of implying a model is dead because it was never asked.
+    """
     if not report:
         return t("empty.no_scan_catalog")
     live = report.get("catalog") or []
     if not report.get("catalog_fetch_ok", True) and not live:
         return t("empty.catalog_failed")
-    dead = engine.removed_ids(report)
-    usable = [model for model in live
-              if (report.get("models") or {}).get(model, {}).get("status") == "ok"]
-    lines = [t("catalog.header", models=len(live))]
-    if dead:
-        lines.append(t("catalog.dropped", count=len(dead),
-                       models=", ".join(dead[:5]) + ("…" if len(dead) > 5 else "")))
+    models = report.get("models") or {}
+    surveyed = [model for model in live if model in models]
+    usable = sorted((model for model in surveyed if models[model].get("status") == "ok"),
+                    key=lambda model: engine.rank_key(models[model]))
+    broken = sorted((model for model in surveyed if models[model].get("status") != "ok"),
+                    key=lambda model: str(models[model].get("status")))
+    age = engine.scan_age_seconds(report)
+    header = t("catalog.header", models=len(live))
+    if surveyed:
+        header += " · " + t("catalog.surveyed", age=human_age(age))
+    lines = [header]
+    removed = engine.removed_ids(report)
+    if removed:
+        lines.append(t("catalog.dropped", count=len(removed),
+                       models=", ".join(removed[:5]) + ("…" if len(removed) > 5 else "")))
     if usable:
-        lines.append(t("catalog.verified", models=", ".join(usable)))
-    unprobed = len(live) - len([m for m in live if m in (report.get("models") or {})])
+        lines.append(t("catalog.online", count=len(usable),
+                       models=", ".join(short_model(model) for model in usable[:limit])
+                       + ("…" if len(usable) > limit else "")))
+    if broken:
+        lines.append(t("catalog.offline", count=len(broken)))
+        for model in broken[:limit]:
+            result = models[model]
+            lines.append(t("catalog.line", model=short_model(model),
+                           why=metrics(result) if result.get("status") != "ok" else "ok"))
+        if len(broken) > limit:
+            lines.append(t("catalog.more", count=len(broken) - limit))
+    unprobed = len(live) - len(surveyed)
     if unprobed:
         lines.append(t("catalog.never_probed", count=unprobed))
     lines += ["", t("catalog.footnote")]
@@ -365,6 +407,7 @@ def render_catalog(report: dict) -> str:
 def render_dead(report: dict) -> str:
     if not report:
         return t("empty.no_scan_probe")
+    report = watched(report)
     _, _, dead = _grouped(report)
     removed = engine.removed_ids(report)
     lines = []

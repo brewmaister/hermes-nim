@@ -14,7 +14,8 @@ from . import engine, render, settings, version
 from .i18n import t
 
 # Help text is localized too: a user who reads /nim in Spanish should not get English help.
-USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "dead", "added", "cfg", "json", "tail")
+USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "survey", "dead", "added", "cfg", "json",
+              "tail")
 
 
 def usage() -> str:
@@ -67,6 +68,23 @@ def do_scan(*, attempts: int | None = None, workers: int | None = None) -> dict:
         configured_dir=current.state_dir,
         recheck_ttft=current.recheck_ttft_seconds,
         workers=workers,
+    )
+
+
+def do_survey() -> dict:
+    """Measure every model NVIDIA lists, once each — the online/offline board, on demand."""
+    current = settings.settings()
+    return engine.scan(
+        base=current.api_base,
+        ttft=current.ttft_seconds,
+        attempts=current.survey_attempts,
+        stagger=current.stagger_seconds,
+        extra=current.shortlist_models(),
+        configured_dir=current.state_dir,
+        recheck_ttft=current.recheck_ttft_seconds,
+        workers=current.survey_workers,
+        survey=True,
+        survey_ttft=current.survey_ttft_seconds,
     )
 
 
@@ -139,6 +157,11 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
         return text, (1 if _dead(report) else 0)
     if verb == "catalog":
         return render.render_catalog(report), 0
+    if verb == "survey":
+        surveyed = do_survey()
+        if surveyed.get("error"):
+            return t("empty.error", error=surveyed["error"]), 2
+        return render.render_catalog(surveyed), (1 if engine.removed_ids(surveyed) else 0)
     if verb == "dead":
         return render.render_dead(report), (1 if _dead(report) else 0)
     if verb == "added":
@@ -208,8 +231,8 @@ def setup_argparse(parser: argparse.ArgumentParser) -> None:
         "verb",
         nargs="?",
         default="",
-        choices=["", "live", "cached", "probe", "speed", "catalog", "dead", "added", "cfg", "json",
-                 "watch", "status", "version", "help"],
+        choices=["", "live", "cached", "probe", "speed", "catalog", "survey", "dead", "added", "cfg",
+                 "json", "watch", "status", "version", "help"],
         help="What to print (default: live scan; `cached` prints the last scan with no network)",
     )
     parser.add_argument("days", nargs="?", default=None,

@@ -498,7 +498,7 @@ def added_ids(report: dict, days: float = 7.0) -> list[str]:
 def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
          stagger: float = 1.5, extra: list[str] | None = None, key: str | None = None,
          config_path: Path | None = None, configured_dir: str = "", workers: int | None = None,
-         recheck_ttft: float = 0.0) -> dict:
+         recheck_ttft: float = 0.0, survey: bool = False, survey_ttft: float = 0.0) -> dict:
     """Probe the models your config uses (plus `extra`), diff the catalog, persist, return the report.
 
     `report["changes"]` holds only transitions worth telling a human about: hysteresis means a model
@@ -519,6 +519,15 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         if model and model not in targets:
             targets.append(model)
             used.setdefault(model, ["shortlist"])
+
+    # A survey reads the catalog *first*, so the list of ids is known before probing instead of after:
+    # the point of a survey is to measure every model NVIDIA lists, not just the ones already in use.
+    catalog_first: list[str] = []
+    if survey:
+        catalog_first = catalog(base, resolved_key)
+        for model in catalog_first:
+            if model not in targets:
+                targets.append(model)
     if not targets:
         return {"error": "No `provider: nvidia` models in config.yaml and nothing on the shortlist.",
                 "models": {}, "changes": [], "catalog": []}
@@ -536,16 +545,22 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         its first byte is already unusable inside a fallback chain (the recommendation gate is 5 s),
         so a slow "recovery" that exceeds the cap is not a recovery worth reporting.
         """
+        base_cap = ttft if model in used else (min(ttft, survey_ttft) if survey_ttft else ttft)
         if recheck_ttft and (previous_models.get(model) or {}).get("severity") == "dead":
-            return min(ttft, recheck_ttft)
-        return ttft
+            return min(base_cap, recheck_ttft)
+        return base_cap
+
+    def attempts_for(model: str) -> int:
+        """A catalog-only model is surveyed once: a second sample doubles a survey to learn the same."""
+        return attempts if model in used else 1
 
     # A model that black-holes costs `attempts x ttft` with nothing to show for it, so fanning out
     # wide is the only lever that shortens a scan without weakening the verdict.
     width = max(1, min(int(workers or 4), 12, len(targets)))
     with ThreadPoolExecutor(max_workers=width) as pool:
         results = list(pool.map(
-            lambda model: probe(base, model, resolved_key, cap_for(model), attempts, stagger),
+            lambda model: probe(base, model, resolved_key, cap_for(model), attempts_for(model),
+                                stagger),
             targets))
     rejected = credential_failure(results)
     if rejected is not None:
@@ -553,7 +568,7 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         # models and would produce a fake RECOV storm once the key is fixed.
         return _credential_report(base, rejected, configured_dir)
 
-    live_catalog = catalog(base, resolved_key)
+    live_catalog = catalog_first or catalog(base, resolved_key)
     catalog_ok = bool(live_catalog)
 
     previous_seen = previous.get("catalog_seen") or {}
@@ -570,6 +585,13 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         was_alerted = bool(before.get("alerted"))
         confirmed = before_severity == current
         alerted = was_alerted
+        # A survey records verdicts for the whole catalog; only models you point at may speak. Fifty
+        # "DEAD nvidia/foo: 404" lines every six hours is noise, not monitoring.
+        watched = model in used
+        if not watched:
+            history[model] = {"severity": current, "status": result["status"], "alerted": False,
+                              "where": []}
+            continue
         if current == "ok":
             if was_alerted:
                 changes.append(f"RECOV    {model}: back to {label(result)}")

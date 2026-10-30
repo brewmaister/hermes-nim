@@ -30,8 +30,12 @@ def render_watch(report: dict, *, verbose: bool = False) -> str:
         return f"NIM watchdog — {report['error']}"
 
     changes = report.get("changes") or []
+    # A survey measures the whole catalog, most of which is 404 for this account. The cron message is
+    # about the models you actually point at — otherwise every tick is 70 lines of other people's
+    # models and you mute the watcher.
+    watched = set(report.get("configured_in") or {})
     dead = [result for result in (report.get("models") or {}).values()
-            if engine.severity(result) == "dead"]
+            if engine.severity(result) == "dead" and result["model"] in watched]
     if not changes and not verbose:
         return ""
 
@@ -40,7 +44,7 @@ def render_watch(report: dict, *, verbose: bool = False) -> str:
         lines += [""] + changes
     if dead:
         used = report.get("configured_in") or {}
-        lines += ["", "Not usable:"]
+        lines += ["", "Not usable (models you point at):"]
         for result in sorted(dead, key=lambda r: r["model"]):
             lines.append(f"• {result['model']} — {engine.label(result)}")
             where = render.short_where(used.get(result["model"]) or [])
@@ -77,6 +81,10 @@ def run_watch(*, verbose: bool = False, send: bool = False) -> int:
         # The cron sweep uses `attempts` per model, so this is the difference between 2x25 s and
         # 2x8 s per dead model — on a 6h tick that is the whole point of rechecking cheaply.
         recheck_ttft=current.recheck_ttft_seconds,
+        # The 6h sweep is the survey: it is the only door that measures the whole catalog, which is
+        # what keeps "who is online right now" true without you maintaining a list of names.
+        survey=current.survey_catalog,
+        survey_ttft=current.survey_ttft_seconds,
     )
     text = render_watch(report, verbose=verbose)
     if text:

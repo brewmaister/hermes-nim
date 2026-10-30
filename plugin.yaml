@@ -1,5 +1,5 @@
 name: hermes-nim
-version: "0.0.11.0"
+version: "0.0.12.0"
 manifest_version: 2
 api_version: 1
 description: "NVIDIA NIM model health in chat: /nim reports which NIM models are alive, stalled, retired or newly arrived, because NVIDIA publishes none of it. `hermes nim` is the same engine for scripts and cron."
@@ -42,6 +42,18 @@ config_schema:
     type: number
     default: 20
     description: "Reuse a scan younger than this instead of probing again, so a double-tap does not fire two full probes."
+  survey_catalog:
+    type: boolean
+    default: true
+    description: "The watchdog measures every model NVIDIA lists, once each, so `/nim catalog` is an online/offline board that stays current without you maintaining a list. The chat scan stays on the models you configured."
+  survey_ttft_seconds:
+    type: number
+    default: 10
+    description: "First-byte cap during a catalog survey. A sweep at the fallback cap would take an hour; 10 s is enough to separate answering from not."
+  survey_workers:
+    type: number
+    default: 10
+    description: "Parallel probes during a catalog survey."
   recheck_ttft_seconds:
     type: number
     default: 8

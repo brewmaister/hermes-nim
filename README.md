@@ -315,6 +315,39 @@ rec:
 
 Your overlay outranks the shipped file, so a rewording costs one line and no fork.
 
+## The board: who is actually online
+
+NVIDIA lists 85 models for this account. 14 answer. The other 71 are 404-unprovisioned, 500ing, or
+black-holing — and `/v1/models` calls all of them available. That gap is the reason this plugin exists,
+so it is measured, not read:
+
+```
+**NVIDIA NIM catalog** — 85 models listed · surveyed 2 min ago
+✓ 14 answering: mistral-large-4-1t-a52b, minimax-m3.1-flash, nemotron-3-ultra-550b-a55b, …
+✗ 71 not useable:
+  • nemotron-parse — http_400
+  • yi-large — not provisioned
+  • jamba-1.5-large-instruct — not provisioned
+  … 59 more (all of it in /nim json)
+```
+
+`/nim survey` measures all of them now — **16.6 s** for 85 models at 10 workers, one attempt each,
+10 s cap (a sweep at the 25 s fallback cap would take an hour). The 6h watchdog runs the same survey,
+so the board is never older than your cron.
+
+Three rules keep that from becoming noise:
+
+- **Chat views stay on your models.** A survey stores 85 verdicts; `/nim` shows the 5 you configured.
+  A verdict on a model you never pointed at is not your uptime, and a recommendation drawn from
+  strangers is advice to change providers.
+- **Only models you point at may alert.** Confirming that `yi-large` is still 404, every six hours,
+  forever, is not monitoring.
+- **The board is a survey, not a verdict for use.** One attempt, ten-second cap: enough to say
+  "answers" or "does not", not enough to rank. Use `/nim speed` for latency you can reason about.
+
+You do not maintain a list of names. Adding a model to your config makes it watched; the board tells
+you what else exists; `/nim survey` refreshes on demand.
+
 ## Rechecking a dead model costs less
 
 A verdict is not a subscription to 25 s of silence. Once a model is confirmed dead, the next sweep

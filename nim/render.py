@@ -11,6 +11,10 @@ from . import benchmarks, engine
 
 MAX_LINES = 26  # keep a chat reply readable; the artifact files hold the full picture
 
+# The watchdog runs every 6h. Past a full cycle plus slack, "the last scan" is no longer evidence
+# about now — say so in the header rather than leaving the reader to do arithmetic on "7.2 h ago".
+STALE_AFTER_S = 7 * 3600
+
 
 def human_age(seconds: float | None) -> str:
     if seconds is None:
@@ -252,9 +256,16 @@ def render_cached(report: dict) -> str:
         return "\n".join(lines)
     age = engine.scan_age_seconds(report)
     models = report.get("models") or {}
-    lines = [f"🧠 NVIDIA NIM · {human_age(age)} · {len(models)} models", ""]
+    stale = age is None or age >= STALE_AFTER_S
+    header = f"🧠 NVIDIA NIM · {human_age(age)} · {len(models)} models"
+    if stale:
+        header += " · ⏳ stale"
+    lines = [header, ""]
     lines += model_lines(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
+    if stale:
+        lines += ["", "⚠️ these verdicts are over 7h old — the watchdog may not be running. "
+                      "/nim probe to measure now."]
     lines += ["", "/nim probe · /nim speed · /nim dead · /nim catalog"]
     return "\n".join(lines)
 

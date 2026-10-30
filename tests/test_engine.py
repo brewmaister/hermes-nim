@@ -534,6 +534,20 @@ class RenderTests(unittest.TestCase):
         self.assertIn("✗ b — stalled", text)
         self.assertIn("2 models", text)
 
+    def test_a_stale_scan_says_so_in_the_header(self):
+        from datetime import datetime, timedelta, timezone
+
+        old = (datetime.now(timezone.utc) - timedelta(hours=9)).isoformat(timespec="seconds")
+        report = _fake_report({"a": "ok"})
+        report["run_at"] = old
+        text = render.render_cached(report)
+        self.assertIn("⏳ stale", text.splitlines()[0])
+        self.assertIn("/nim probe to measure now", text)
+
+        fresh = _fake_report({"a": "ok"})
+        fresh["run_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.assertNotIn("stale", render.render_cached(fresh).splitlines()[0])
+
     def test_cached_without_state_says_so(self):
         self.assertIn("no scan yet", render.render_cached({}))
 

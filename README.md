@@ -277,6 +277,27 @@ flapping provider produces alarm spam every tick.
   can be beaten by a 428B one, as MiniMax-M3 beats Nemotron-3-Ultra on the index while carrying
   fewer parameters. Treat the ordering as a prior, not a verdict.
 
+## Versioning
+
+Four numbers, and the last one is where most releases go:
+
+```
+0   .  0   .  7   .  1
+│      │      │      └─ cosmetic or tiny fix — formatting, wording, a glyph
+│      │      └──────── behaviour change: a verb, a default, a new verdict
+│      └─────────────── capability area (probe engine / plugin surface / watchdogs)
+└────────────────────── breaking change to the output contract — 1.x when it happens
+```
+
+So a day of formatting work moves `0.0.7.1 → 0.0.7.4`, not `1.7.1 → 1.10.0`. The version exists to
+answer one question — "is what I installed the thing I am reading about?" — and nothing else, so it
+should not look like a product launch every time a line gets shorter.
+
+`plugins update` compares these with PEP 440 ordering, which handles four segments correctly
+(`0.0.7.2 > 0.0.7.1`). Renumbering *down* from `1.7.1` to `0.0.7.1` cannot be pulled by an update, so
+that one move needs `hermes plugins install brewmaister/hermes-nim --enable --force` — a reinstall,
+once, which the changelog entry for this version says plainly.
+
 ## Development
 
 ```bash

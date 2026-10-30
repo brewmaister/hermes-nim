@@ -20,10 +20,11 @@ class Settings:
     attempts: int = 2
     stagger_seconds: float = 1.5
     state_dir: str = ""
-    # The candidate pool for swaps — not in config, so without a default `/nim probe` would only
-    # ever look at models already in use and never surface a better one.
-    shortlist: tuple[str, ...] = ("minimaxai/minimax-m3.1-flash", "meta/muse-glimmer-30b",
-                                  "stepfun-ai/step-5-preview")
+    # Empty by default, on purpose: a plugin that probes models you never configured is spending your
+    # latency on its author's taste. `/nim` then measures exactly the models config.yaml references,
+    # and the candidate pool grows only when you name something here. (`/nim catalog` still reports
+    # what NVIDIA lists, without probing it.)
+    shortlist: tuple[str, ...] = ()
     # `/nim` measures by default: a cached verdict with an age on it still needs the reader to do
     # arithmetic about whether it means anything. `/nim cached` is the instant view.
     live_default: bool = True

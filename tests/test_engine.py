@@ -811,11 +811,41 @@ moa:
                                          "openai/gpt-oss-20b"])
         self.assertTrue(found["openai/gpt-oss-20b"][0].startswith("fallback_providers[0]"))
 
-    def test_shortlist_has_a_default_so_candidates_are_surfaced(self):
+    def test_nothing_is_probed_that_you_did_not_point_at(self):
+        """The default shortlist is empty: a plugin does not get to spend your latency on its taste."""
         from nim import settings as settings_module
 
-        with mock.patch.dict(os.environ, {"NIM_SHORTLIST": ""}, clear=False):
-            self.assertTrue(settings_module.settings().shortlist_models())
+        with mock.patch.dict(os.environ, {"NIM_SHORTLIST": ""}, clear=False), \
+                mock.patch.object(settings_module, "settings",
+                                  return_value=settings_module.Settings()):
+            self.assertEqual(settings_module.settings().shortlist_models(), [])
+
+    def test_a_shortlist_you_set_is_probed(self):
+        from nim import settings as settings_module
+
+        with mock.patch.dict(os.environ, {"NIM_SHORTLIST": "a/one, b/two"}, clear=False):
+            self.assertEqual(settings_module.Settings().with_env().shortlist_models(),
+                             ["a/one", "b/two"])
+
+    def test_scan_measures_config_models_only_without_a_shortlist(self):
+        """The count in the progress message is 4 for this box because 4 is what config.yaml says."""
+        probed: list[str] = []
+
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+            probed.append(model)
+            return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": 1,
+                    "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n"
+                              "  - model: nvidia/b\n    provider: nvidia\n")
+            with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                    mock.patch.object(engine, "catalog", return_value=["nvidia/a", "nvidia/b"]):
+                engine.scan(ttft=1, attempts=1, stagger=0, key="k", extra=[],
+                            config_path=config, configured_dir=tmp)
+        self.assertEqual(sorted(probed), ["nvidia/a", "nvidia/b"])
 
     def test_fallback_scanner_without_yaml(self):
         text = ("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n"

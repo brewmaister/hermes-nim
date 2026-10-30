@@ -62,15 +62,16 @@ def _days(args: list[str], fallback: float = 7.0) -> float:
     return fallback
 
 
-def do_scan() -> dict:
+def do_scan(*, attempts: int | None = None, workers: int | None = None) -> dict:
     current = settings.settings()
     return engine.scan(
         base=current.api_base,
         ttft=current.ttft_seconds,
-        attempts=current.attempts,
+        attempts=current.attempts if attempts is None else attempts,
         stagger=current.stagger_seconds,
         extra=current.shortlist_models(),
         configured_dir=current.state_dir,
+        workers=workers,
     )
 
 
@@ -121,7 +122,8 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
                 and age < current.live_grace_seconds:
             # A double-tap must not fire a second full probe: that scan is still about now.
             return render.render_probe(cached), 0
-        report = do_scan()
+        # One attempt and a wide fan-out: the floor is one ttft cap, not two waves of two attempts.
+        report = do_scan(attempts=current.live_attempts, workers=12)
         if report.get("error"):
             return f"🧠 NVIDIA NIM — {report['error']}", 2
         return render.render_probe(report), 0
@@ -175,7 +177,7 @@ def measuring_note() -> str:
     current = settings.settings()
     models = len(engine.configured_models()) + len(current.shortlist_models())
     return (f"⏳ NVIDIA NIM — measuring {models} models live "
-            f"({current.attempts}× each, up to {current.ttft_seconds:g}s per attempt)…")
+            f"(worst case ~{current.ttft_seconds:g}s if one is wedged)…")
 
 
 def slash_command_with_progress(ctx, raw_args: str = "", **kwargs) -> str | None:

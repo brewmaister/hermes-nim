@@ -523,7 +523,7 @@ def added_ids(report: dict, days: float = 7.0) -> list[str]:
 
 def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
          stagger: float = 1.5, extra: list[str] | None = None, key: str | None = None,
-         config_path: Path | None = None, configured_dir: str = "") -> dict:
+         config_path: Path | None = None, configured_dir: str = "", workers: int | None = None) -> dict:
     """Probe the models your config uses (plus `extra`), diff the catalog, persist, return the report.
 
     `report["changes"]` holds only transitions worth telling a human about: hysteresis means a model
@@ -548,8 +548,10 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         return {"error": "No `provider: nvidia` models in config.yaml and nothing on the shortlist.",
                 "models": {}, "changes": [], "catalog": []}
 
-    workers = max(1, min(4, len(targets)))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    # A model that black-holes costs `attempts x ttft` with nothing to show for it, so fanning out
+    # wide is the only lever that shortens a scan without weakening the verdict.
+    width = max(1, min(int(workers or 4), 12, len(targets)))
+    with ThreadPoolExecutor(max_workers=width) as pool:
         results = list(pool.map(
             lambda model: probe(base, model, resolved_key, ttft, attempts, stagger), targets))
     rejected = credential_failure(results)

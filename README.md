@@ -39,6 +39,13 @@ Two things make that bearable:
   no 40-second silence and no leftover progress line.
 - **A scan younger than `live_grace_seconds` (20 s) is reused.** Double-tapping `/nim` does not fire
   two full probes at the same model.
+- **One attempt, every model at once.** Two attempts in two waves took 61 s when something was
+  wedged; now all seven probe concurrently with a single sample, so the floor is one stall cap
+  (~26 s worst case, typically 1–14 s). `/nim probe` still takes two samples when you want the
+  authoritative verdict.
+
+The wait is `ttft_seconds` for a wedged model — that cap is not padding, it is how long you must
+listen before "no answer" is a fact. Lower it and slow-but-alive models get reported as dead.
 
 `/nim cached` is the instant view, `live_default: false` puts the old behaviour back, and
 `NIM_LIVE=0` does it for one process. `hermes nim` follows the same default; `hermes nim cached` is

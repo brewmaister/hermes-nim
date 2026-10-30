@@ -1,0 +1,384 @@
+"""Offline tests: the engine is exercised against a fake transport, never the real NIM API.
+
+Run from the plugin root (unittest, not pytest — that is what the host venv has):
+
+    ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s tests -v
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import socket
+import sys
+import tempfile
+import unittest
+import urllib.error
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from nim import engine, render, watch  # noqa: E402
+
+
+class FakeResponse(io.BytesIO):
+    """Enough of an http.client response for both SSE iteration and json.load()."""
+
+    def __init__(self, chunks: list[bytes] | bytes):
+        payload = chunks if isinstance(chunks, bytes) else b"".join(chunks)
+        super().__init__(payload)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def __iter__(self):
+        return iter(self.readlines())
+
+
+def http_error(code: int, body: dict | str) -> urllib.error.HTTPError:
+    raw = body.encode() if isinstance(body, str) else json.dumps(body).encode()
+    return urllib.error.HTTPError("https://x/v1/chat/completions", code, "err", {}, io.BytesIO(raw))
+
+
+SSE_OK = b'data: {"choices":[{"delta":{"content":"OK"}}]}\n\n'
+
+
+def opener(outcomes):
+    """A transport that replays a fixed script: FakeResponse to return, exception to raise.
+
+    A list handed to `side_effect` would be returned item-by-item *without* calling anything, so the
+    script is replayed explicitly here.
+    """
+    queue = list(outcomes)
+
+    def _open(*_args, **_kwargs):
+        item = queue.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        if callable(item):  # a factory, so a body can be streamed more than once
+            return item()
+        return item
+
+    return _open
+
+
+class AttemptTests(unittest.TestCase):
+    def _attempt(self, outcome):
+        with mock.patch.object(engine, "_urlopen", side_effect=opener([outcome])):
+            return engine.attempt("https://x/v1", "m", "k", 5)
+
+    def test_streamed_token_is_ok(self):
+        result = self._attempt(FakeResponse(SSE_OK))
+        self.assertEqual(result["kind"], "ok")
+        self.assertIsInstance(result["seconds"], float)
+
+    def test_empty_stream_is_stall_not_ok(self):
+        self.assertEqual(self._attempt(FakeResponse(b""))["kind"], "stall")
+
+    def test_410_is_eol_and_parses_the_date(self):
+        detail = {"detail": "The model 'z-ai/glm-5.3' has reached its end of life on "
+                            "2026-10-28T08:00:00Z and is no longer available."}
+        result = self._attempt(http_error(410, detail))
+        self.assertEqual(result["kind"], "eol")
+        self.assertEqual(result["eol_at"], "2026-10-28T08:00:00Z")
+
+    def test_404_is_not_provisioned(self):
+        self.assertEqual(self._attempt(http_error(404, {"status": 404}))["kind"],
+                         "not_provisioned")
+
+    def test_429_is_rate_limited(self):
+        self.assertEqual(self._attempt(http_error(429, {"status": 429}))["kind"], "rate_limited")
+
+    def test_timeout_is_stall(self):
+        self.assertEqual(self._attempt(socket.timeout("read timed out"))["kind"], "stall")
+
+    def test_500_is_reported_verbatim(self):
+        self.assertEqual(self._attempt(http_error(500, {"status": 500}))["kind"], "http_500")
+
+
+class ProbeTests(unittest.TestCase):
+    def _probe(self, kinds):
+        script = {"ok": lambda: FakeResponse(SSE_OK),
+                  "stall": socket.timeout("nope"),
+                  "429": http_error(429, {"status": 429}),
+                  "410": http_error(410, {"detail": "end of life on 2026-01-01T00:00:00Z"})}
+        outcomes = [script[kind] for kind in kinds]
+        with mock.patch.object(engine, "_urlopen", side_effect=opener(outcomes)):
+            return engine.probe("https://x/v1", "m", "k", 5, attempts=len(kinds), stagger=0)
+
+    def test_all_ok(self):
+        self.assertEqual(self._probe(["ok", "ok"])["status"], "ok")
+
+    def test_one_stall_is_flaky_not_ok(self):
+        result = self._probe(["ok", "stall"])
+        self.assertEqual(result["status"], "flaky")
+        self.assertEqual(result["ok_attempts"], 1)
+
+    def test_all_stalls(self):
+        self.assertEqual(self._probe(["stall", "stall"])["status"], "stall")
+
+    def test_429_alongside_an_answer_is_throttled_not_rot(self):
+        self.assertEqual(self._probe(["ok", "429"])["status"], "throttled")
+
+    def test_only_429(self):
+        self.assertEqual(self._probe(["429", "429"])["status"], "rate_limited")
+
+    def test_eol_stops_retrying(self):
+        result = self._probe(["410", "ok"])
+        self.assertEqual(result["status"], "eol")
+        self.assertEqual(result["attempts"], 1)
+
+
+class VerdictTests(unittest.TestCase):
+    def test_severity_buckets(self):
+        self.assertEqual(engine.severity({"status": "ok"}), "ok")
+        self.assertEqual(engine.severity({"status": "flaky"}), "warn")
+        self.assertEqual(engine.severity({"status": "throttled"}), "warn")
+        self.assertEqual(engine.severity({"status": "stall"}), "dead")
+        self.assertEqual(engine.severity({"status": "not_provisioned"}), "dead")
+        self.assertEqual(engine.severity({"status": "http_500"}), "dead")
+
+    def test_labels_are_sentences(self):
+        self.assertIn("zero bytes", engine.label(
+            {"status": "stall", "attempts": 3, "trials": ["stall:25"] * 3}))
+        self.assertIn("EOL", engine.label({"status": "eol", "eol_at": "2026-10-28T08:00:00Z"}))
+        self.assertIn("404", engine.label({"status": "not_provisioned", "attempts": 1}))
+
+
+class CatalogTests(unittest.TestCase):
+    def test_fetch_failure_returns_empty(self):
+        with mock.patch.object(engine, "_urlopen", side_effect=socket.timeout("no")):
+            self.assertEqual(engine.catalog("https://x/v1", "k"), [])
+
+    def test_fetch_parses_ids(self):
+        body = json.dumps({"data": [{"id": "b/model"}, {"id": "a/model"}]}).encode()
+        with mock.patch.object(engine, "_urlopen", lambda *a, **k: FakeResponse(body)):
+            self.assertEqual(engine.catalog("https://x/v1", "k"), ["a/model", "b/model"])
+
+    def test_merge_seen_keeps_first_sighting(self):
+        previous = {"m": {"first_seen": "2026-01-01T00:00:00+00:00", "last_seen": "2026-01-01T00:00:00+00:00"}}
+        merged = engine.merge_seen(previous, ["m", "new"])
+        self.assertEqual(merged["m"]["first_seen"], "2026-01-01T00:00:00+00:00")
+        self.assertNotEqual(merged["m"]["last_seen"], "2026-01-01T00:00:00+00:00")
+        self.assertIn("new", merged)
+
+    def test_merge_seen_keeps_history_of_the_gone(self):
+        merged = engine.merge_seen({"gone": {"first_seen": "x", "last_seen": "y"}}, ["live"])
+        self.assertIn("gone", merged)
+        self.assertEqual(engine.removed_ids({"catalog": ["live"], "catalog_seen": merged}), ["gone"])
+
+    def test_failed_fetch_never_reads_as_mass_removal(self):
+        report = {"catalog": ["a"], "catalog_fetch_ok": False,
+                  "catalog_seen": {"a": {}, "b": {}}}
+        self.assertEqual(engine.removed_ids(report), [])
+
+    def test_added_ids_respects_the_window(self):
+        report = {"catalog": ["fresh", "old"],
+                  "catalog_fetch_ok": True,
+                  "catalog_seen": {
+                      "fresh": {"first_seen": "2999-01-01T00:00:00+00:00"},
+                      "old": {"first_seen": "2000-01-01T00:00:00+00:00"},
+                  }}
+        self.assertEqual(engine.added_ids(report, days=7), ["fresh"])
+
+
+class ConfigScanTests(unittest.TestCase):
+    def test_relative_imports_are_safe_to_call(self):
+        # A stray absolute import would break the loader's force-reload eviction.
+        source = (Path(__file__).resolve().parents[1] / "__init__.py").read_text()
+        self.assertIn("from .nim.commands import", source)
+
+    def test_scan_reads_fallback_and_delegation_paths(self):
+        config = """
+model:
+  default: deepseek-flash
+fallback_providers:
+  - model: openai/gpt-oss-20b
+    provider: nvidia
+delegation:
+  backends:
+    model_map:
+      options:
+        - name: free
+          provider: nvidia
+          model: nvidia/nemotron-3.5-lightning-30b-a3b
+moa:
+  reference_models:
+    - provider: deepseek
+      model: deepseek-v4-flash
+    - provider: nvidia
+      model: nvidia/nemotron-3-ultra-550b-a55b
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yaml"
+            path.write_text(config)
+            found = engine.configured_models(path)
+        self.assertEqual(sorted(found), ["nvidia/nemotron-3-ultra-550b-a55b",
+                                         "nvidia/nemotron-3.5-lightning-30b-a3b",
+                                         "openai/gpt-oss-20b"])
+        self.assertTrue(found["openai/gpt-oss-20b"][0].startswith("fallback_providers[0]"))
+
+    def test_shortlist_has_a_default_so_candidates_are_surfaced(self):
+        from nim import settings as settings_module
+
+        with mock.patch.dict(os.environ, {"NIM_SHORTLIST": ""}, clear=False):
+            self.assertTrue(settings_module.settings().shortlist_models())
+
+    def test_fallback_scanner_without_yaml(self):
+        text = ("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n"
+                "  - model: z/not-nvidia\n    provider: other\n")
+        found = engine._configured_models_without_yaml(text)
+        self.assertEqual(sorted(found), ["nvidia/a"])
+
+
+def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
+                 changes=None) -> dict:
+    models = {}
+    for model, status in statuses.items():
+        models[model] = {"model": model, "status": status, "ok_attempts": 2, "attempts": 2,
+                         "ttft_s": 0.5 if status == "ok" else None, "trials": ["ok:0.5"] * 2}
+    return {"run_at": engine._now_iso(), "attempts": 2, "models": models,
+            "configured_in": {model: ["fallback_providers[0]"] for model in statuses},
+            "catalog": list(catalog), "catalog_fetch_ok": fetch_ok,
+            "catalog_seen": {model: {"first_seen": engine._now_iso()} for model in catalog},
+            "changes": changes or []}
+
+
+class RenderTests(unittest.TestCase):
+    def test_cached_names_models_and_age(self):
+        text = render.render_cached(_fake_report({"a": "ok", "b": "stall"}))
+        self.assertIn("a — ok 0.5s", text)
+        self.assertIn("b — STALL", text)
+        self.assertIn("last scan", text)
+
+    def test_cached_without_state_says_so(self):
+        self.assertIn("no scan yet", render.render_cached({}))
+
+    def test_error_report_is_rendered(self):
+        self.assertIn("NVIDIA_API_KEY", render.render_cached({"error": engine.key_hint()}))
+
+    def test_paths_become_roles(self):
+        self.assertEqual(render.short_where(["fallback_providers[2]"]), "fallback 3")
+        self.assertEqual(render.short_where(["delegation.backends.model_map.options[2]"]),
+                         "free route")
+
+    def test_dead_and_added(self):
+        report = _fake_report({"a": "ok", "b": "not_provisioned"})
+        self.assertIn("b", render.render_dead(report))
+        # the fixture seeds catalog_seen with "now", so everything it knows is genuinely an arrival
+        self.assertIn("first seen", render.render_added(report))
+        old = _fake_report({"a": "ok"})
+        old["catalog_seen"] = {"a": {"first_seen": "2000-01-01T00:00:00+00:00"}}
+        self.assertIn("no new models", render.render_added(old))
+
+    def test_long_lists_are_truncated(self):
+        statuses = {f"m{i}": "ok" for i in range(40)}
+        text = render.render_cached(_fake_report(statuses, catalog=tuple(statuses)))
+        self.assertIn("more (see /nim catalog)", text)
+
+
+class WatchTests(unittest.TestCase):
+    def test_silent_without_changes(self):
+        self.assertEqual(watch.render_watch(_fake_report({"a": "ok"})), "")
+
+    def test_speaks_on_change(self):
+        text = watch.render_watch(_fake_report({"a": "stall"}, changes=["DEAD     a: STALL"]))
+        self.assertIn("NIM watchdog", text)
+        self.assertIn("DEAD     a", text)
+        self.assertIn("Not usable", text)
+
+    def test_verbose_always_speaks(self):
+        self.assertIn("NIM watchdog", watch.render_watch(_fake_report({"a": "ok"}), verbose=True))
+
+
+class ScanTests(unittest.TestCase):
+    """The scan drives hysteresis and history; the transport is stubbed out."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state_dir = self.tmp.name
+        self.config = Path(self.state_dir) / "config.yaml"
+        self.config.write_text(
+            "fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n"
+            "  - model: nvidia/b\n    provider: nvidia\n")
+        patcher = mock.patch.dict(os.environ, {"NIM_STATE_DIR": self.state_dir}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def _scan(self, statuses: dict[str, str], catalog=("nvidia/a", "nvidia/b")) -> dict:
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+            status = statuses.get(model, "ok")
+            return {"model": model, "status": status, "ok_attempts": 1,
+                    "attempts": max(1, attempts), "ttft_s": 0.4 if status == "ok" else None,
+                    "trials": ["ok:0.4"], "detail": "", "checked_at": engine._now_iso()}
+
+        with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                mock.patch.object(engine, "catalog", return_value=list(catalog)):
+            return engine.scan(ttft=1, attempts=1, stagger=0, key="k",
+                               config_path=self.config, configured_dir=self.state_dir)
+
+    def test_first_scan_reports_nothing_even_when_broken(self):
+        report = self._scan({"nvidia/a": "stall"})
+        self.assertEqual(report["changes"], [])
+        self.assertEqual(report["models"]["nvidia/a"]["severity"], "dead")
+
+    def test_second_consecutive_bad_scan_reports_once(self):
+        self._scan({"nvidia/a": "stall"})
+        report = self._scan({"nvidia/a": "stall"})
+        self.assertTrue(any(change.startswith("DEAD") for change in report["changes"]))
+        third = self._scan({"nvidia/a": "stall"})
+        self.assertEqual(third["changes"], [])
+
+    def test_recovery_is_reported_and_rearms(self):
+        self._scan({"nvidia/a": "stall"})
+        self._scan({"nvidia/a": "stall"})
+        recovered = self._scan({})
+        self.assertTrue(any(change.startswith("RECOV") for change in recovered["changes"]))
+        broke_again = self._scan({"nvidia/a": "stall"})
+        self.assertEqual(broke_again["changes"], [])  # needs confirming again
+
+    def test_state_round_trips(self):
+        self._scan({})
+        saved = engine.load_state(self.state_dir)
+        self.assertEqual(saved["version"], engine.STATE_VERSION)
+        self.assertIn("nvidia/a", saved["models"])
+        self.assertIn("nvidia/a", saved["catalog_seen"])
+
+    def test_failed_catalog_fetch_does_not_announce_removals(self):
+        self._scan({})
+        report = self._scan({}, catalog=())
+        self.assertFalse(report["catalog_fetch_ok"])
+        self.assertEqual(report["removed"], [])
+        self.assertFalse([c for c in report["changes"] if c.startswith("GONE")])
+
+    def test_removal_is_announced_with_config_flag(self):
+        self._scan({})
+        report = self._scan({}, catalog=("nvidia/a",))
+        gone = [change for change in report["changes"] if change.startswith("GONE")]
+        self.assertEqual(len(gone), 1)
+        self.assertIn("CONFIG STILL USES IT", gone[0])
+
+    def test_arrival_is_probed_before_being_announced(self):
+        self._scan({})
+        report = self._scan({}, catalog=("nvidia/a", "nvidia/b", "brand/new"))
+        announced = [change for change in report["changes"] if change.startswith("NEW MODEL")]
+        self.assertEqual(len(announced), 1)
+        self.assertIn("brand/new", announced[0])
+        self.assertIn("ok 0.4s", announced[0])
+
+    def test_missing_key_is_an_error_not_a_crash(self):
+        with mock.patch.dict(os.environ, {"NVIDIA_API_KEY": ""}, clear=False), \
+                mock.patch.object(engine, "api_key", return_value=""):
+            report = engine.scan(key=None, config_path=self.config,
+                                 configured_dir=self.state_dir)
+        self.assertIn("NVIDIA_API_KEY", report["error"])
+
+
+if __name__ == "__main__":
+    unittest.main()

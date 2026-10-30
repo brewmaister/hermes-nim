@@ -330,6 +330,23 @@ def _configured_models_without_yaml(text: str) -> dict[str, list[str]]:
 _PARAMS_RE = re.compile(r"(\d+(?:\.\d+)?)b(?![a-z])", re.IGNORECASE)
 
 
+# NIM publishes no capability metadata: /v1/models gives an id, nothing else. So "is this a chat
+# model?" has exactly one honest answer available for free — the name — plus the measurement (did it
+# answer). This list is that rule, in code, where you can read and change it; it is a naming heuristic
+# and is labelled as one wherever it is rendered. A model whose name hits nothing here is treated as
+# chat-capable, because most are.
+UTILITY_MARKERS = (
+    "guard", "safety", "parse", "calibrat", "detector", "vision", "embed", "rerank", "retriev",
+    "asr", "tts", "ocr", "reward", "moderation", "classif", "translat", "speech", "voice",
+)
+
+
+def capability(model: str) -> str:
+    """``chat`` or ``utility`` — from the id, since NVIDIA ships no capability field."""
+    name = str(model or "").split("/", 1)[-1].lower()
+    return "utility" if any(marker in name for marker in UTILITY_MARKERS) else "chat"
+
+
 def params_from_id(model: str) -> float | None:
     """Parameter count in billions, parsed from the vendor's own model id.
 

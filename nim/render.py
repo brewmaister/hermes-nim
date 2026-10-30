@@ -380,6 +380,68 @@ def render_cached(report: dict) -> str:
     return "\n".join(lines)
 
 
+def render_board(report: dict, limit: int = 14) -> str:
+    """The whole answer to "what can I use?": every listed id, measured, sorted into chat / utility /
+    offline. This is `/nim` itself — a survey, not a peek at the models already in config."""
+    if not report:
+        return t("empty.no_scan_catalog")
+    if report.get("error"):
+        return t("empty.error", error=report["error"])
+    models = report.get("models") or {}
+    catalog = report.get("catalog") or []
+    survey = report.get("survey") or {}
+    rows = {model: verdict for model, verdict in models.items() if model in catalog}
+    if not rows:
+        return t("empty.no_scan_catalog")
+
+    alive = {model: verdict for model, verdict in rows.items()
+             if verdict.get("status") == "ok"}
+    chat = sorted((model for model in alive if engine.capability(model) == "chat"),
+                  key=lambda model: engine.rank_key(alive[model]))
+    utility = sorted((model for model in alive if engine.capability(model) == "utility"),
+                     key=lambda model: engine.rank_key(alive[model]))
+    offline = [(model, verdict) for model, verdict in rows.items()
+               if verdict.get("status") != "ok"]
+
+    mine = report.get("configured_in") or {}
+    pick = engine.recommended(watched(report))
+    pick_model = pick.get("model") if pick else None
+
+    header = t("board.header", age=human_age(engine.scan_age_seconds({"run_at": survey.get("at")}))
+               if survey else t("catalog.never_surveyed"), listed=len(catalog))
+    lines = [header, t("board.counts", chat=len(chat), utility=len(utility),
+                       offline=len(offline)), ""]
+
+    if chat:
+        lines.append(t("board.section_chat"))
+        for model in chat[:limit]:
+            verdict = alive[model]
+            bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]
+            published = benchmarks.lookup(model)
+            if published is not None:
+                bits.insert(0, f"{QUALITY_MARK}{published.index:g}"
+                               + (f" {t('quality.family')}" if published.inherited else ""))
+            if model in mine:
+                bits.append(t("board.yours"))
+            mark = "★" if model == pick_model else "✓"
+            lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
+        if len(chat) > limit:
+            lines.append(t("foot.more", hidden=len(chat) - limit))
+    if utility:
+        lines += ["", t("board.section_utility"),
+                  "· " + ", ".join(short_model(model) for model in utility[:limit])]
+
+    if offline:
+        lines += ["", t("board.offline_header", count=len(offline))]
+        counts: dict[str, int] = {}
+        for _model, verdict in offline:
+            counts[verdict.get("status") or "?"] = counts.get(verdict.get("status") or "?", 0) + 1
+        for status, count in sorted(counts.items(), key=lambda item: -item[1]):
+            lines.append(t("board.offline_group", count=count, why=metrics({"status": status})))
+    lines += ["", t("board.hints")]
+    return "\n".join(lines)
+
+
 def render_catalog(report: dict, limit: int = 12) -> str:
     """What NVIDIA lists, and what actually answers — the online/offline board.
 

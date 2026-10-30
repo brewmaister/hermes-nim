@@ -135,7 +135,18 @@ usage:
   json: "/nim json — el último escaneo en JSON"
   tail: "/nim version · /nim help"
 
+board:
+  header: "**NVIDIA NIM** · medido {age} · {listed} listados"
+  counts: "✓ {chat} de chat · {utility} utilitarios en línea · {offline} caídos"
+  section_chat: "chat — usables ahora"
+  section_utility: "utilitarios (no son de chat)"
+  offline_header: "caídos — {count}"
+  offline_group: "  · {count} {why}"
+  yours: "tuyo"
+  hints: "/nim probe (solo tus modelos, rápido) · /nim catalog (detalle de caídos) · /nim json (todo)"
+
 progress:
+  surveying: "⏳ NVIDIA NIM — midiendo los {listed} modelos listados (~{seconds}s, un intento cada uno)…"
   measuring: "⏳ NVIDIA NIM — midiendo tus {models} modelos (peor caso ~{ttft}s si uno está atorado){board}…"
 
 cmd:

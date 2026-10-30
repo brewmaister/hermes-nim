@@ -42,7 +42,9 @@ class Settings:
     # "answers" from "does not", which is the only question the catalog view asks.
     survey_ttft_seconds: float = 10.0
     survey_workers: int = 10
-    # The watchdog sweeps the whole catalog; the chat view stays on the models you configured.
+    # Every `/nim` sweeps the whole catalog: the question "what can I actually use?" is a survey, not
+    # a peek at the four models already in config. Costs ~17 s instead of ~1 s, and the answer is the
+    # whole board rather than a footnote.
     survey_catalog: bool = True
     survey_attempts: int = 1
     # One attempt for the interactive view: two samples doubled the worst case to ~50 s, and a model

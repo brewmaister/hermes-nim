@@ -430,10 +430,16 @@ class FakeCtx:
 class LiveDefaultTests(unittest.TestCase):
     """/nim measures by default; the cache is one word away and never slower than it was."""
 
-    def _settings(self, live=True, grace=20.0):
+    def _settings(self, live=True, grace=20.0, survey=False):
+        """survey=False on purpose: these tests are about the config-only door.
+
+        Leaving it True would route dispatch into do_survey() and the suite would hit NVIDIA's API —
+        a test that needs the network is not a test, it is a flaky reminder.
+        """
         from nim import settings as settings_mod
 
-        return settings_mod.Settings(live_default=live, live_grace_seconds=grace)
+        return settings_mod.Settings(live_default=live, live_grace_seconds=grace,
+                                     survey_catalog=survey)
 
     def _fresh(self, **overrides):
         from datetime import datetime, timezone
@@ -468,6 +474,20 @@ class LiveDefaultTests(unittest.TestCase):
                 mock.patch.object(commands, "do_scan", side_effect=AssertionError("probed")):
             text, _ = commands.dispatch("cached", [])
         self.assertIn("ago", text.splitlines()[0])
+
+    def test_the_default_door_is_the_survey_when_that_is_configured(self):
+        fresh = self._fresh()
+        fresh["catalog"] = ["a/x-30b"]
+        fresh["survey"] = {"at": fresh["run_at"], "listed": 85, "measured": 85, "online": 13}
+        with mock.patch.object(commands.settings, "settings",
+                               return_value=self._settings(survey=True)), \
+                mock.patch.object(commands.engine, "load_state",
+                                  return_value={"run_at": "2026-10-30T00:00:00+00:00"}), \
+                mock.patch.object(commands, "do_survey", return_value=fresh) as survey:
+            text, code = commands.dispatch("", [])
+        survey.assert_called_once()
+        self.assertEqual(code, 0)
+        self.assertIn("surveyed", text)
 
     def test_live_default_off_restores_the_old_behaviour(self):
         with mock.patch.object(commands.settings,
@@ -610,6 +630,44 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertIn("NVIDIA NIM · ", flat)
         # the glyphs survive: they are content, not decoration
         self.assertIn("🧠29", flat)
+
+
+class CapabilityTests(unittest.TestCase):
+    """The chat/utility split is a coded naming rule, not somebody's taste — and it is testable."""
+
+    def test_utility_models_are_named_utility_models(self):
+        for model in ("meta/llama-guard-4-12b", "nvidia/nemotron-safety-guard-8b-v3",
+                      "nvidia/nemotron-parse", "nvidia/ising-calibration-1.5-31b",
+                      "ai-synthetic-video-detector", "nvidia/llama-3.2-90b-vision-instruct",
+                      "baai/bge-m3-embed"):
+            self.assertEqual(engine.capability(model), "utility", model)
+
+    def test_everything_else_is_treated_as_chat(self):
+        for model in ("minimaxai/minimax-m3.1-flash", "nvidia/nemotron-3-ultra-550b-a55b",
+                      "openai/gpt-oss-20b", "meta/muse-glimmer-30b", "poolside/laguna-xs-2.1"):
+            self.assertEqual(engine.capability(model), "chat", model)
+
+    def test_the_board_splits_online_models_and_counts_the_dead(self):
+        survey = {"at": engine._now_iso(), "listed": 4, "measured": 4, "online": 2}
+        ids = ("minimaxai/minimax-m3.1-flash", "nvidia/llama-guard-4-12b", "yi-large",
+               "nvidia/nemotron-parse")
+        report = _fake_report({"minimaxai/minimax-m3.1-flash": "ok",
+                               "nvidia/llama-guard-4-12b": "ok",
+                               "yi-large": "not_provisioned",
+                               "nvidia/nemotron-parse": "not_provisioned"},
+                              catalog=ids, survey=survey)
+        text = render.render_board(report)
+        self.assertIn("1 chat · 1 utility online · 2 offline", text)
+        self.assertIn("chat — usable now", text)
+        self.assertIn("minimax-m3.1-flash", text)
+        self.assertIn("utility (not for chat)", text)
+        self.assertIn("llama-guard-4-12b", text)
+        self.assertIn("offline — 2", text)
+        self.assertIn("2 not provisioned", text)
+
+    def test_the_board_survives_a_report_with_no_survey(self):
+        report = _fake_report({"a/one": "ok"}, catalog=("a/one",))
+        self.assertIn("never surveyed", render.render_board(report))
 
 
 class LocalizationTests(unittest.TestCase):

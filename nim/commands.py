@@ -129,13 +129,28 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
     # anything; the whole point of this plugin is the wire, so the default path uses it.
     if verb in {"", "status", "live", "cached"}:
         if verb == "cached" or not current.live_default:
-            return render.render_cached(engine.load_state(current.state_dir)), 0
+            report = engine.load_state(current.state_dir)
+            return (render.render_board(report) if current.survey_catalog
+                    else render.render_cached(report)), 0
         cached = engine.load_state(current.state_dir)
         age = engine.scan_age_seconds(cached)
-        if verb != "live" and cached.get("models") and age is not None \
-                and age < current.live_grace_seconds:
-            # A double-tap must not fire a second full probe: that scan is still about now.
-            return render.render_probe(cached), 0
+        reusable = (verb != "live" and cached.get("models") and age is not None
+                    and age < current.live_grace_seconds)
+        if reusable and current.survey_catalog and not cached.get("survey"):
+            # A cached config-only scan cannot stand in for a survey: the board would show five
+            # verdicts under a header claiming the catalog was measured.
+            reusable = False
+        if reusable:
+            # A double-tap must not fire a second survey: that one is still about now.
+            return (render.render_board(cached) if current.survey_catalog
+                    else render.render_cached(cached)), 0
+        if current.survey_catalog:
+            # The default door is the survey: "what can I use?" is answered by measuring everything
+            # NVIDIA lists, not by checking the four models already in config.
+            report = do_survey()
+            if report.get("error"):
+                return t("empty.error", error=report["error"]), 2
+            return render.render_board(report), 0
         # One attempt and a wide fan-out: the floor is one ttft cap, not two waves of two attempts.
         report = do_scan(attempts=current.live_attempts, workers=12)
         if report.get("error"):
@@ -202,6 +217,10 @@ def measuring_note() -> str:
     of the catalog is even usable.
     """
     current = settings.settings()
+    if current.survey_catalog:
+        listed = len(engine.load_state(current.state_dir).get("catalog") or []) or 85
+        return t("progress.surveying", listed=listed,
+                 seconds=f"{(listed / max(1, current.survey_workers)) * current.survey_ttft_seconds:.0f}")
     models = len(engine.configured_models()) + len(current.shortlist_models())
     board = render.board_badge(engine.load_state(current.state_dir))
     return t("progress.measuring", models=models, ttft=f"{current.ttft_seconds:g}", board=board)

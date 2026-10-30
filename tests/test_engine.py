@@ -946,6 +946,35 @@ class ScanTests(unittest.TestCase):
         broke_again = self._scan({"nvidia/a": "stall"})
         self.assertEqual(broke_again["changes"], [])  # needs confirming again
 
+    def _caps(self, recheck: float) -> dict[str, float]:
+        """Run one scan and record the first-byte cap each model was probed with."""
+        seen: dict[str, float] = {}
+
+        def fake_probe(_base, model, _key, ttft, attempts, _stagger):
+            seen[model] = ttft
+            return {"model": model, "status": "stall", "ok_attempts": 0, "attempts": 1,
+                    "ttft_s": None, "trials": ["stall:25"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                mock.patch.object(engine, "catalog", return_value=["nvidia/a", "nvidia/b"]):
+            engine.scan(ttft=25, attempts=1, stagger=0, key="k", config_path=self.config,
+                        configured_dir=self.state_dir, recheck_ttft=recheck)
+        return seen
+
+    def test_a_model_already_dead_is_rechecked_with_the_shorter_cap(self):
+        """25 s of silence per dead model per sweep bought nothing; re-confirming a death is cheaper."""
+        self.assertEqual(self._caps(recheck=8), {"nvidia/a": 25, "nvidia/b": 25})  # first verdict
+        self.assertEqual(self._caps(recheck=8), {"nvidia/a": 8, "nvidia/b": 8})    # already dead
+        # a model that answers again still gets the real cap on its next run, so a slow recovery is
+        # judged against ttft_seconds rather than the recheck shortcut
+        self._scan({})
+        self.assertEqual(self._caps(recheck=8), {"nvidia/a": 25, "nvidia/b": 25})
+
+    def test_recheck_can_be_disabled(self):
+        self._caps(recheck=0)
+        self.assertEqual(self._caps(recheck=0), {"nvidia/a": 25, "nvidia/b": 25})
+
     def test_state_round_trips(self):
         self._scan({})
         saved = engine.load_state(self.state_dir)

@@ -30,6 +30,9 @@ class Settings:
     # Reuse a scan this young instead of probing again — a double-tap on /nim should not launch two
     # full probes at the same model.
     live_grace_seconds: float = 20.0
+    # Re-confirming a death is a cheaper question than the first verdict: a model already marked dead
+    # is probed with this shorter first-byte cap instead of ttft_seconds. 0 disables the shortcut.
+    recheck_ttft_seconds: float = 8.0
     # One attempt for the interactive view: two samples doubled the worst case to ~50 s, and a model
     # that black-holes for 25 s is unusable in chat whether or not a second attempt agrees. The
     # hysteresis still needs two *runs* before anything is called dead, so this cannot fake a death.
@@ -67,6 +70,11 @@ class Settings:
         if os.environ.get("NIM_LIVE_GRACE"):
             try:
                 changes["live_grace_seconds"] = max(0.0, float(os.environ["NIM_LIVE_GRACE"]))
+            except ValueError:
+                pass
+        if os.environ.get("NIM_RECHECK_TTFT"):
+            try:
+                changes["recheck_ttft_seconds"] = max(0.0, float(os.environ["NIM_RECHECK_TTFT"]))
             except ValueError:
                 pass
         if os.environ.get("NIM_SHORTLIST"):
@@ -127,6 +135,8 @@ def settings() -> Settings:
             live_default=_as_bool(configured.get("live_default"), values.live_default),
             live_grace_seconds=_as_float(configured.get("live_grace_seconds"),
                                          values.live_grace_seconds),
+            recheck_ttft_seconds=_as_float(configured.get("recheck_ttft_seconds"),
+                                           values.recheck_ttft_seconds),
             live_attempts=_as_int(configured.get("live_attempts"), values.live_attempts),
             language=str(configured.get("language") or values.language),
         )
@@ -147,6 +157,7 @@ def describe() -> str:
         t("settings.shortlist", value=models),
         t("settings.live_default", value=current.live_default),
         t("settings.live_grace", value=f"{current.live_grace_seconds:g}"),
+        t("settings.recheck", value=f"{current.recheck_ttft_seconds:g}"),
         t("settings.live_attempts", value=current.live_attempts, attempts=current.attempts),
         t("settings.language", value=current.language),
     ]

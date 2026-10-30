@@ -65,6 +65,7 @@ def do_scan(*, attempts: int | None = None, workers: int | None = None) -> dict:
         stagger=current.stagger_seconds,
         extra=current.shortlist_models(),
         configured_dir=current.state_dir,
+        recheck_ttft=current.recheck_ttft_seconds,
         workers=workers,
     )
 
@@ -79,6 +80,7 @@ def do_speed_scan(attempts: int) -> dict:
         stagger=current.stagger_seconds,
         extra=current.shortlist_models(),
         configured_dir=current.state_dir,
+        recheck_ttft=current.recheck_ttft_seconds,
     )
 
 

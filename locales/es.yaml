@@ -140,5 +140,6 @@ settings:
   none: "ninguno"
   live_default: "· live_default: {value} (/nim mide en cada llamada; /nim cached es la vista instantánea)"
   live_grace: "· live_grace_seconds: {value} (reutiliza un escaneo más reciente que esto)"
+  recheck: "· recheck_ttft_seconds: {value} (a un modelo ya marcado como caído solo se le pide un byte durante este tiempo; 0 = usar ttft_seconds)"
   live_attempts: "· live_attempts: {value} (para /nim interactivo; /nim probe usa {attempts})"
   language: "· language: {value} (auto sigue display.language; incluye en/es)"

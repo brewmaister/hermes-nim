@@ -141,5 +141,6 @@ settings:
   none: "none"
   live_default: "· live_default: {value} (/nim probes on every call; /nim cached is the instant view)"
   live_grace: "· live_grace_seconds: {value} (reuse a scan younger than this)"
+  recheck: "· recheck_ttft_seconds: {value} (a model already marked dead is only asked for a byte for this long; 0 = use ttft_seconds)"
   live_attempts: "· live_attempts: {value} (interactive /nim; /nim probe uses {attempts})"
   language: "· language: {value} (auto follows display.language; en/es shipped)"

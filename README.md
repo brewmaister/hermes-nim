@@ -315,6 +315,25 @@ rec:
 
 Your overlay outranks the shipped file, so a rewording costs one line and no fork.
 
+## Rechecking a dead model costs less
+
+A verdict is not a subscription to 25 s of silence. Once a model is confirmed dead, the next sweep
+asks it a cheaper question: did *any* byte come back within `recheck_ttft_seconds` (default 8)?
+
+Measured on a model that black-holes (same endpoint, same state, one attempt each):
+
+```
+recheck_ttft=8   32.8 s wall   trials ['stall:8.12']    # the dead one gave up at 8 s
+recheck_ttft=0   44.6 s wall   trials ['stall:20.14']   # full cap, to learn the same thing
+```
+
+The shorter cap is not a softer claim about the model: a NIM endpoint that needs more than ~8 s to
+emit its first byte is already unusable in a fallback chain, where the recommendation gate is 5 s. A
+slow recovery that exceeds the cap is not a recovery worth reporting — and a model that *does*
+answer gets the full `ttft_seconds` on its next run, so the shortcut never grades a live model.
+
+Set it to `0` to disable, then every model costs the full cap again.
+
 ## Versioning
 
 Four numbers, and the last one is where most releases go:

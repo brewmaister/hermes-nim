@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json as jsonlib
+import os
 import sys
 
 from . import engine, render, settings, version
@@ -23,6 +24,23 @@ USAGE = (
     "/nim json — the last scan as JSON\n"
     "/nim version · /nim help"
 )
+
+
+def _print(text: str) -> None:
+    """print(), but a closed pipe is not a crash.
+
+    `hermes nim probe | head -3` is a normal thing to type, and without this the shell gets a
+    BrokenPipeError traceback and a non-zero exit for a command that did exactly what was asked.
+    The devnull dup2 is Python's documented workaround: it also silences the interpreter's final
+    flush of the closed stream.
+    """
+    try:
+        print(text)
+    except BrokenPipeError:
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except Exception:  # noqa: BLE001 - nothing useful left to do
+            pass
 
 
 def _verb_and_rest(raw: str) -> tuple[str, list[str]]:
@@ -176,9 +194,9 @@ def handle_cli(args: argparse.Namespace) -> int:
     text, code = dispatch(verb, extra)
     if getattr(args, "json", False) and verb != "json":
         report = engine.load_state(settings.settings().state_dir)
-        print(jsonlib.dumps(report, indent=1))
+        _print(jsonlib.dumps(report, indent=1))
         return code
-    print(text)
+    _print(text)
     return code
 
 

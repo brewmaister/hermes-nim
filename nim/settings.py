@@ -41,7 +41,7 @@ class Settings:
     # catalog sweep that waited 25 s on each black hole would take an hour. 10 s is enough to tell
     # "answers" from "does not", which is the only question the catalog view asks.
     survey_ttft_seconds: float = 10.0
-    survey_workers: int = 10
+    survey_workers: int = 20
     # Every `/nim` sweeps the whole catalog: the question "what can I actually use?" is a survey, not
     # a peek at the four models already in config. Costs ~17 s instead of ~1 s, and the answer is the
     # whole board rather than a footnote.

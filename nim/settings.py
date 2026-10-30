@@ -5,10 +5,13 @@ Every knob has a working default, so the plugin behaves the same on a fresh box 
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, replace
 
-from .engine import DEFAULT_BASE
+from .engine import DEFAULT_BASE, hermes_home
+
+logger = logging.getLogger("hermes-nim.settings")
 
 _CTX = None
 
@@ -115,32 +118,59 @@ def configure(ctx) -> None:
     _CTX = ctx
 
 
+def _config_entry_from_file() -> dict:
+    """The plugin's settings out of ``$HERMES_HOME/config.yaml``, for the ctx-less doors.
+
+    `hermes nim` and the cron watchdog run outside the gateway, so there is no ctx to ask, and
+    reading nothing meant they silently used the defaults while `/nim` in chat honoured the config.
+    Two doors disagreeing about the shortlist is a bug, not a nuance.
+    """
+    path = hermes_home() / "config.yaml"
+    try:
+        import yaml
+
+        raw = yaml.safe_load(path.read_text()) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:  # noqa: BLE001 - a broken config must not break the command
+        logger.warning("hermes-nim: could not read %s: %s", path, exc)
+        return {}
+    entry = ((raw.get("plugins") or {}).get("entries") or {}).get("hermes-nim") or {}
+    return entry.get("settings") or {}
+
+
+def _configured() -> dict:
+    """Settings dict from the live ctx, or from config.yaml when there is no ctx."""
+    if _CTX is None:
+        return _config_entry_from_file()
+    try:
+        raw = _CTX.get_config() or {}
+    except Exception:  # noqa: BLE001
+        return _config_entry_from_file()
+    entry = ((raw.get("plugins") or {}).get("entries") or {}).get("hermes-nim") or {}
+    return entry.get("settings") or {}
+
+
 def settings() -> Settings:
     values = Settings()
-    if _CTX is not None:
-        try:
-            raw = _CTX.get_config() or {}
-        except Exception:  # noqa: BLE001
-            raw = {}
-        entry = ((raw.get("plugins") or {}).get("entries") or {}).get("hermes-nim") or {}
-        configured = entry.get("settings") or {}
-        shortlist_raw = str(configured.get("shortlist") or "") or ",".join(values.shortlist)
-        values = Settings(
-            api_base=str(configured.get("api_base") or values.api_base),
-            ttft_seconds=_as_float(configured.get("ttft_seconds"), values.ttft_seconds),
-            attempts=_as_int(configured.get("attempts"), values.attempts),
-            stagger_seconds=_as_float(configured.get("stagger_seconds"), values.stagger_seconds),
-            state_dir=str(configured.get("state_dir") or ""),
-            shortlist=tuple(
-                part.strip() for part in shortlist_raw.split(",") if part.strip()),
-            live_default=_as_bool(configured.get("live_default"), values.live_default),
-            live_grace_seconds=_as_float(configured.get("live_grace_seconds"),
-                                         values.live_grace_seconds),
-            recheck_ttft_seconds=_as_float(configured.get("recheck_ttft_seconds"),
-                                           values.recheck_ttft_seconds),
-            live_attempts=_as_int(configured.get("live_attempts"), values.live_attempts),
-            language=str(configured.get("language") or values.language),
-        )
+    configured = _configured()
+    shortlist_raw = str(configured.get("shortlist") or "") or ",".join(values.shortlist)
+    values = Settings(
+        api_base=str(configured.get("api_base") or values.api_base),
+        ttft_seconds=_as_float(configured.get("ttft_seconds"), values.ttft_seconds),
+        attempts=_as_int(configured.get("attempts"), values.attempts),
+        stagger_seconds=_as_float(configured.get("stagger_seconds"), values.stagger_seconds),
+        state_dir=str(configured.get("state_dir") or ""),
+        shortlist=tuple(
+            part.strip() for part in shortlist_raw.split(",") if part.strip()),
+        live_default=_as_bool(configured.get("live_default"), values.live_default),
+        live_grace_seconds=_as_float(configured.get("live_grace_seconds"),
+                                     values.live_grace_seconds),
+        recheck_ttft_seconds=_as_float(configured.get("recheck_ttft_seconds"),
+                                       values.recheck_ttft_seconds),
+        live_attempts=_as_int(configured.get("live_attempts"), values.live_attempts),
+        language=str(configured.get("language") or values.language),
+    )
     return values.with_env()
 
 

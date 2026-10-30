@@ -820,6 +820,38 @@ moa:
                                   return_value=settings_module.Settings()):
             self.assertEqual(settings_module.settings().shortlist_models(), [])
 
+    def test_the_ctx_less_doors_read_config_yaml(self):
+        """`hermes nim` and the cron watchdog have no ctx — they must still honour config.yaml."""
+        from nim import settings as settings_module
+
+        file_settings = {"shortlist": "minimaxai/minimax-m3.1-flash", "ttft_seconds": 9,
+                         "language": "es"}
+        with mock.patch.object(settings_module, "_CTX", None), \
+                mock.patch.object(settings_module, "_config_entry_from_file",
+                                  return_value=file_settings):
+            current = settings_module.settings()
+        self.assertEqual(current.shortlist_models(), ["minimaxai/minimax-m3.1-flash"])
+        self.assertEqual(current.ttft_seconds, 9)
+        self.assertEqual(current.language, "es")
+
+    def test_the_gateway_ctx_still_wins_over_the_file(self):
+        from nim import settings as settings_module
+
+        ctx = mock.Mock()
+        ctx.get_config.return_value = {"plugins": {"entries": {"hermes-nim": {"settings": {
+            "shortlist": "from/ctx"}}}}}
+        with mock.patch.object(settings_module, "_CTX", ctx), \
+                mock.patch.object(settings_module, "_config_entry_from_file",
+                                  return_value={"shortlist": "from/file"}):
+            self.assertEqual(settings_module.settings().shortlist_models(), ["from/ctx"])
+
+    def test_a_broken_config_file_falls_back_to_defaults(self):
+        from nim import settings as settings_module
+
+        with mock.patch.object(settings_module, "_CTX", None), \
+                mock.patch.object(settings_module, "_config_entry_from_file", return_value={}):
+            self.assertEqual(settings_module.settings().shortlist_models(), [])
+
     def test_a_shortlist_you_set_is_probed(self):
         from nim import settings as settings_module
 

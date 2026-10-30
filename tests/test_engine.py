@@ -150,6 +150,66 @@ class VerdictTests(unittest.TestCase):
         self.assertIn("404", engine.label({"status": "not_provisioned", "attempts": 1}))
 
 
+class RankTests(unittest.TestCase):
+    def test_param_count_comes_from_the_id(self):
+        self.assertEqual(engine.params_from_id("nvidia/nemotron-3-ultra-550b-a55b"), 550)
+        self.assertEqual(engine.params_from_id("nvidia/nemotron-3.5-lightning-30b-a3b"), 30)
+        self.assertEqual(engine.params_from_id("openai/gpt-oss-20b"), 20)
+        self.assertEqual(engine.params_from_id("google/gemma-4-31b-it"), 31)
+        self.assertIsNone(engine.params_from_id("minimaxai/minimax-m3.1-flash"))
+        self.assertIsNone(engine.params_from_id("nvidia/nemotron-parse-2.0"))
+
+    def _result(self, model, ok_attempts=2, attempts=2, ttft=0.5, status="ok"):
+        return {"model": model, "status": status, "ok_attempts": ok_attempts,
+                "attempts": attempts, "ttft_s": ttft, "trials": []}
+
+    def test_bigger_model_ranks_first_despite_slower(self):
+        big = self._result("nvidia/nemotron-3-ultra-550b-a55b", ttft=2.0)
+        small = self._result("openai/gpt-oss-20b", ttft=0.2)
+        ordered = sorted([small, big], key=engine.rank_key)
+        self.assertEqual(ordered[0]["model"], big["model"])
+
+    def test_unknown_size_sorts_last_and_is_not_guessed(self):
+        unknown = self._result("minimaxai/minimax-m3.1-flash", ttft=0.1)
+        small = self._result("openai/gpt-oss-20b", ttft=5.0)
+        ordered = sorted([unknown, small], key=engine.rank_key)
+        self.assertEqual(ordered[0]["model"], small["model"])
+
+    def test_reliability_breaks_a_size_tie(self):
+        steady = self._result("a/model-30b", ok_attempts=2, attempts=2, ttft=3.0)
+        shaky = self._result("b/model-30b", ok_attempts=1, attempts=2, ttft=0.1,
+                             status="flaky")
+        ordered = sorted([shaky, steady], key=engine.rank_key)
+        self.assertEqual(ordered[0]["model"], steady["model"])
+
+    def test_latency_breaks_a_full_tie(self):
+        slow = self._result("a/model-30b", ttft=4.0)
+        fast = self._result("b/model-30b", ttft=0.4)
+        ordered = sorted([slow, fast], key=engine.rank_key)
+        self.assertEqual(ordered[0]["model"], fast["model"])
+
+    def test_default_view_is_ordered_best_first_and_names_the_pick(self):
+        report = _fake_report({
+            "openai/gpt-oss-20b": "ok",
+            "nvidia/nemotron-3-ultra-550b-a55b": "ok",
+            "minimaxai/minimax-m3.1-flash": "ok",
+        })
+        for model in report["models"]:
+            report["models"][model]["attempts"] = 2
+            report["models"][model]["ok_attempts"] = 2
+            report["models"][model]["ttft_s"] = 0.5
+        text = render.render_cached(report)
+        self.assertIn("550B", text)
+        self.assertIn("← best", text)
+        first_model = next(line for line in text.splitlines() if line.startswith("✅"))
+        self.assertIn("nemotron-3-ultra-550b", first_model)
+        self.assertIn("best right now: nvidia/nemotron-3-ultra-550b-a55b", text)
+
+    def test_best_line_says_so_when_nothing_is_healthy(self):
+        report = _fake_report({"a/model-30b": "stall"})
+        self.assertIn("nothing", render.best_line(report))
+
+
 class CatalogTests(unittest.TestCase):
     def test_fetch_failure_returns_empty(self):
         with mock.patch.object(engine, "_urlopen", side_effect=socket.timeout("no")):

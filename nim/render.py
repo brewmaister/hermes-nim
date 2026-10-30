@@ -55,18 +55,27 @@ def _grouped(report: dict) -> tuple[list[dict], list[dict], list[dict]]:
     return alive, warn, dead
 
 
-def _line(result: dict, used: dict[str, list[str]], mark: str) -> str:
+def _size_tag(result: dict) -> str:
+    """The vendor's own parameter count, when the id states one."""
+    size = engine.params_from_id(str(result.get("model") or ""))
+    return f"{size:g}B · " if size is not None else ""
+
+
+def _line(result: dict, used: dict[str, list[str]], mark: str, best: bool = False) -> str:
     where = short_where((used or {}).get(result["model"]) or [])
     suffix = f" · {where}" if where else ""
-    return f"{mark} {result['model']} — {engine.label(result)}{suffix}"
+    tail = " ← best" if best else ""
+    return f"{mark} {result['model']} — {_size_tag(result)}{engine.label(result)}{suffix}{tail}"
 
 
 def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     used = report.get("configured_in") or {}
     alive, warn, dead = _grouped(report)
     lines: list[str] = []
-    for result in sorted(alive, key=lambda r: (r.get("ttft_s") or 99)):
-        lines.append(_line(result, used, "✅"))
+    # Best-first, and the ordering is all facts: parameter count from the model id (NVIDIA's own
+    # number), then how many attempts answered, then measured latency. Nothing invented.
+    for position, result in enumerate(sorted(alive, key=engine.rank_key)):
+        lines.append(_line(result, used, "✅", best=position == 0))
     for result in warn:
         lines.append(_line(result, used, "⚠️"))
     for result in dead:
@@ -75,6 +84,20 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
         hidden = len(lines) - limit
         lines = lines[:limit] + [f"… and {hidden} more (see /nim catalog)"]
     return lines
+
+
+def best_line(report: dict) -> str:
+    """One line naming the top pick and exactly why it is on top."""
+    alive = [result for result in (report.get("models") or {}).values()
+             if engine.severity(result) == "ok"]
+    if not alive:
+        return "best right now: nothing — no model answered every attempt"
+    top = sorted(alive, key=engine.rank_key)[0]
+    size = engine.params_from_id(str(top.get("model") or ""))
+    why = [f"{top.get('ok_attempts')}/{top.get('attempts')} answered", f"{top.get('ttft_s')}s"]
+    if size is not None:
+        why.insert(0, f"{size:g}B")
+    return f"best right now: {top['model']} — " + ", ".join(why)
 
 
 def changes_block(report: dict) -> list[str]:
@@ -92,7 +115,7 @@ def render_probe(report: dict) -> str:
               f"{report.get('attempts')} attempt(s) each · "
               f"just now")
     lines = [header, ""] + model_lines(report) + changes_block(report)
-    lines += ["", _catalog_footnote(report)]
+    lines += ["", best_line(report), _catalog_footnote(report)]
     return "\n".join(lines)
 
 
@@ -118,7 +141,7 @@ def render_cached(report: dict) -> str:
     models = report.get("models") or {}
     lines = [f"🧠 NIM — last scan {human_age(age)} · {len(models)} models", ""]
     lines += model_lines(report)
-    lines += ["", _catalog_footnote(report)]
+    lines += ["", best_line(report), _catalog_footnote(report)]
     lines += ["", "/nim probe to re-scan · /nim dead · /nim added · /nim catalog"]
     return "\n".join(lines)
 

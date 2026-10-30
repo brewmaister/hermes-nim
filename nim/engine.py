@@ -269,6 +269,51 @@ def _configured_models_without_yaml(text: str) -> dict[str, list[str]]:
     return {model: sorted(where) for model, where in sorted(found.items())}
 
 
+# --------------------------------------------------------------------------- ranking inputs
+
+_PARAMS_RE = re.compile(r"(\d+(?:\.\d+)?)b(?![a-z])", re.IGNORECASE)
+
+
+def params_from_id(model: str) -> float | None:
+    """Parameter count in billions, parsed from the vendor's own model id.
+
+    `nvidia/nemotron-3-ultra-550b-a55b` -> 550 (total; the a-suffix is active params in an MoE),
+    `openai/gpt-oss-20b` -> 20. None when the id does not say — never a guess.
+
+    This is the only *quality* prior available without inventing one: NIM exposes no benchmarks and
+    no metadata beyond id/owned_by, but the vendor puts the size in the name. It is displayed next
+    to the model so nobody has to take the ordering on faith.
+    """
+    if not model:
+        return None
+    tail = str(model).rsplit("/", 1)[-1]
+    found = _PARAMS_RE.search(tail)
+    return float(found.group(1)) if found else None
+
+
+def reliability(result: dict) -> float:
+    """Fraction of attempts that answered — 1.0 beats 0.5 even when the fast one is flakier."""
+    attempts = int(result.get("attempts") or 1) or 1
+    return float(result.get("ok_attempts") or 0) / attempts
+
+
+def rank_key(result: dict) -> tuple:
+    """Best-first: known size (largest first), then reliability, then latency.
+
+    Ordered this way so every position is explainable from facts on the line: the size is in the
+    model id, the ratio and the milliseconds were measured. Unknown sizes sort after known ones and
+    are labelled as unknown rather than being assigned a made-up number.
+    """
+    size = params_from_id(str(result.get("model") or ""))
+    latency = result.get("ttft_s")
+    return (
+        0 if size is not None else 1,      # known sizes first
+        -(size or 0.0),                    # bigger = stronger prior
+        -reliability(result),              # then: answered every time
+        latency if latency is not None else 9e9,
+    )
+
+
 # --------------------------------------------------------------------------- verdicts
 
 def severity(result: dict) -> str:
@@ -488,6 +533,7 @@ def scan_age_seconds(report: dict) -> float | None:
 
 
 __all__ = [
+    "params_from_id", "rank_key", "reliability",
     "DEFAULT_BASE", "STATE_VERSION", "api_key", "key_hint", "attempt", "probe", "catalog",
     "configured_models", "severity", "label", "load_state", "save_state", "scan",
     "scan_age_seconds", "merge_seen", "removed_ids", "added_ids", "state_dir", "state_path",

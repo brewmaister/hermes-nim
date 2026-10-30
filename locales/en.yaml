@@ -1,0 +1,128 @@
+# hermes-nim — English (source language).
+#
+# Flat `key: text` pairs; `{placeholders}` are filled by nim.i18n.t(). Keep the glyphs (🧠 ⚡ ★ ✓ ⚠ ✗)
+# in translations: they are labels, not decoration.
+#
+# The user-facing contract of this file: every key here must also exist in every other shipped
+# language (a test enforces it), and a missing key falls back to English rather than to its name.
+
+header:
+  cached: "**NVIDIA NIM** · {age} · {models} models"
+  known: "**NVIDIA NIM** — {models} models known"
+  probe: "**NVIDIA NIM scan** · just now · {models} models · {attempts}× each"
+  aborted: "**NVIDIA NIM scan** — aborted"
+  stale_badge: " · ⏳ stale"
+
+age:
+  seconds: "{n}s ago"
+  minutes: "{n} min ago"
+  hours: "{n} h ago"
+  days: "{n} d ago"
+  unknown: "unknown age"
+
+status:
+  flaky: "flaky {ok}/{attempts}"
+  throttled: "throttled {ok}/{attempts}"
+  stalled: "stalled"
+  retired: "retired"
+  not_provisioned: "not provisioned"
+  rate_limited: "rate limited"
+  auth_rejected: "auth rejected"
+
+label:
+  ok: "ok {seconds}s ({ok}/{attempts})"
+  flaky: "FLAKY — only {ok}/{attempts} answered ({why})"
+  flaky_worst: "worst stall {seconds}s"
+  throttled: "ok but throttled — {ok}/{attempts} answered, rest 429"
+  stall: "STALL — zero bytes on all {attempts} attempts"
+  eol: "EOL {when}"
+  eol_unknown: "EOL unknown date"
+  not_provisioned: "404 not provisioned for this account"
+  rate_limited: "429 throttled on every attempt"
+  auth_error: "auth rejected — check NVIDIA_API_KEY"
+
+role:
+  fallback: "fallback {n}"
+  free: "free"
+  moa: "moa"
+  shortlist: "shortlist"
+
+rec:
+  line: "**★ recommended** {model} — {evidence}"
+  none: "**★ recommended** nothing — no model answered every attempt"
+  none_slow: "**★ recommended** nothing under {cap}s — the healthy models are all slower than that right now"
+  ctx: "{ctx} ctx"
+
+foot:
+  catalog: "catalog: {listed} listed · {tracked} tracked"
+  catalog_extra: " (removals kept in history)"
+  catalog_failed: "catalog: /v1/models did not answer — arrival/removal tracking skipped"
+  hints: "/nim probe · /nim speed · /nim dead · /nim catalog"
+  stale: "⚠️ these verdicts are over 7h old — the watchdog may not be running. /nim probe to measure now."
+  more: "… and {hidden} more (see /nim catalog)"
+  since: "since the last scan:"
+
+cred:
+  key: "🔑 NVIDIA key rejected — HTTP {code}: {detail}"
+  not_probed: "   Models were NOT probed: this is the credential, not the models."
+  fix: "   Fix NVIDIA_API_KEY in ~/.hermes/.env, then /nim probe."
+  below: "   Below is the last good scan ({age}), unchanged."
+  no_detail: "no detail in the response"
+
+speed:
+  header: "**NVIDIA NIM speed** · just now · {attempts}× each · median time to first byte"
+  cannot: "**NVIDIA NIM speed** — cannot measure"
+  error: "**NVIDIA NIM speed** — {error}"
+  none: "No model answered at all — nothing to time."
+  finish: "{seconds}s to finish"
+  flaky: "only {ok}/{attempts} answered"
+  unmeasured: "no measurement (never emitted a byte): {models}"
+  note: "first byte is what feels fast; 'to finish' is the whole 32-token answer, so it tracks tokens/s. Median, not mean: one stall is an event, not a speed."
+  fastest: "fastest right now: {model} — {seconds}s"
+
+empty:
+  no_scan: "**NVIDIA NIM** — no scan yet.\n\n/nim probe scans the models your config uses (~30 s).\n/nim cfg shows what those are without touching the network."
+  no_scan_probe: "**NVIDIA NIM** — no scan yet; run /nim probe."
+  no_scan_catalog: "**NVIDIA NIM** — no scan yet; run /nim probe first (the catalog is read during a scan)."
+  catalog_failed: "**NVIDIA NIM** — /v1/models did not answer on the last scan."
+  cfg_none: "**NVIDIA NIM** — no `provider: nvidia` models in config.yaml.\nNothing to watch; add one, or use /nim probe to check the shortlist only."
+  error: "**NVIDIA NIM** — {error}"
+
+catalog:
+  header: "**NVIDIA NIM catalog** — {models} models listed"
+  dropped: "· {count} dropped since the last scan: {models}"
+  verified: "· verified answering: {models}"
+  never_probed: "· {count} never probed (not in your config or shortlist)"
+  footnote: "Listing a model proves nothing: /v1/models includes ids this account cannot call (404) and ids that answer zero bytes."
+
+dead:
+  header: "**NVIDIA NIM** — {count} not usable"
+  none: "**NVIDIA NIM** — nothing is currently dead in the last scan."
+  dropped: "dropped from /v1/models ({count}): {models}"
+
+added:
+  header: "**NVIDIA NIM** — {count} model(s) first seen in the last {days} days"
+  none: "**NVIDIA NIM** — no new models in the last {days} days{hint}."
+  tracking: " (tracking since {date})"
+  footnote: "New arrivals are probed once when they appear; most turn out to be 404-unprovisioned for this account."
+
+cfg:
+  header: "**NVIDIA NIM** — {count} NIM model(s) in config.yaml"
+
+usage:
+  nim: "/nim — live scan, now (measures every model; ~15-40 s)"
+  cached: "/nim cached — the last scan, instantly, no network"
+  probe: "/nim probe — live scan of the models your config uses + the shortlist\n            (~30-60 s: a model that never answers costs two 25 s stalls)"
+  speed: "/nim speed [n] — timed scan: first byte and full answer, median of n attempts (default 3)"
+  catalog: "/nim catalog — what /v1/models lists, and what dropped out of it"
+  dead: "/nim dead — everything currently unusable"
+  added: "/nim added [days] — models that appeared recently (default 7)"
+  cfg: "/nim cfg — which NIM models config.yaml references, no network"
+  json: "/nim json — the last scan as JSON"
+  tail: "/nim version · /nim help"
+
+progress:
+  measuring: "⏳ NVIDIA NIM — measuring {models} models live (worst case ~{ttft}s if one is wedged)…"
+
+settings:
+  intro: "settings (config.yaml → plugins.entries.hermes-nim.settings, or NIM_* env):"

@@ -1,5 +1,5 @@
 name: hermes-nim
-version: "0.0.7.2"
+version: "0.0.8.0"
 manifest_version: 2
 api_version: 1
 description: "NVIDIA NIM model health in chat: /nim reports which NIM models are alive, stalled, retired or newly arrived, because NVIDIA publishes none of it. `hermes nim` is the same engine for scripts and cron."
@@ -9,6 +9,10 @@ homepage: https://github.com/brewmaister/hermes-nim
 tags: [nvidia, nim, models, health, watchdog]
 requires_hermes: ">=0.21.6"
 provides_hooks: []
+provides_locales: [en, es]
+locale_metadata:
+  en: {endonym: English}
+  es: {endonym: Español}
 config_schema:
   api_base:
     type: string
@@ -42,6 +46,10 @@ config_schema:
     type: number
     default: 1
     description: "Attempts per model for the interactive /nim (one keeps the worst case at a single stall cap; /nim probe still uses `attempts`). Hysteresis still needs two consecutive runs before anything is called dead, so a single sample cannot fake a death."
+  language:
+    type: string
+    default: "auto"
+    description: "Output language: auto (follows NIM_LANGUAGE → HERMES_LANGUAGE → display.language), or pin en / es. Adding a language is one YAML file in locales/."
   shortlist:
     type: string
     default: "minimaxai/minimax-m3.1-flash,meta/muse-glimmer-30b,stepfun-ai/step-5-preview"

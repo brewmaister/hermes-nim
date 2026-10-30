@@ -277,6 +277,44 @@ flapping provider produces alarm spam every tick.
   can be beaten by a 428B one, as MiniMax-M3 beats Nemotron-3-Ultra on the index while carrying
   fewer parameters. Treat the ordering as a prior, not a verdict.
 
+## Localization
+
+Every user-facing string lives in `locales/`, not in the Python. Shipped: **en** and **es** (Mexican
+register — a colleague, not a manual).
+
+```
+/nim                 →  **NVIDIA NIM** · hace 28 min · 7 modelos
+                        ★ minimax-m3.1-flash — 🧠29 family · ⚡0.56s · candidato
+                        **★ recomendado** minimaxai/minimax-m3.1-flash — 🧠29 · 1M de contexto · ⚡0.56s · 1/1
+```
+
+Language resolution, first hit wins: an explicit `lang=` → `NIM_LANGUAGE` → `HERMES_LANGUAGE` →
+`plugins.entries.hermes-nim.settings.language` → `display.language` → `en`. So set it once in Hermes
+config and `/nim` follows the rest of the agent.
+
+Adding a language is one file: copy `locales/en.yaml` to `locales/pt.yaml`, translate the values, keep
+the `{placeholders}` and the glyphs, add the id to `provides_locales` in `plugin.yaml`. A test fails
+if any shipped language is missing a key that English has, so a half-translated pack cannot ship
+silently.
+
+Two deliberate choices worth knowing:
+
+- **Key resolution is our own, not `agent.i18n.t`.** The host layer needs a repo-root `hermes_yaml`
+  module on `sys.path` (it warns and returns bare keys when a plugin runs outside the install dir) and
+  resolves language from a config cache we cannot pin. Ours is deterministic, silent, and identical in
+  the gateway, the CLI and the cron script.
+- **A missing key degrades to English, then to the key itself** — never to a traceback. A watchdog that
+  dies because a translation file has a typo is worse than an English sentence.
+
+Per-line overrides: drop `$HERMES_HOME/locales/es.yaml` with just the keys you want to change, e.g.
+
+```yaml
+rec:
+  line: "**★ recomendado** {model} — {evidence}  (según datos de terceros)"
+```
+
+Your overlay outranks the shipped file, so a rewording costs one line and no fork.
+
 ## Versioning
 
 Four numbers, and the last one is where most releases go:

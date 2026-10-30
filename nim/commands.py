@@ -11,20 +11,14 @@ import os
 import sys
 
 from . import engine, render, settings, version
+from .i18n import t
 
-USAGE = (
-    "/nim — live scan, now (measures every model; ~15-40 s)\n"
-    "/nim cached — the last scan, instantly, no network\n"
-    "/nim probe — live scan of the models your config uses + the shortlist\n"
-    "            (~30-60 s: a model that never answers costs two 25 s stalls)\n"
-    "/nim catalog — what /v1/models lists, and what dropped out of it\n"
-    "/nim dead — everything currently unusable\n"
-    "/nim added [days] — models that appeared recently (default 7)\n"
-    "/nim speed [n] — timed scan: first byte and full answer, median of n attempts (default 3)\n"
-    "/nim cfg — which NIM models config.yaml references, no network\n"
-    "/nim json — the last scan as JSON\n"
-    "/nim version · /nim help"
-)
+# Help text is localized too: a user who reads /nim in Spanish should not get English help.
+USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "dead", "added", "cfg", "json", "tail")
+
+
+def usage() -> str:
+    return "\n".join(t(f"usage.{key}") for key in USAGE_KEYS)
 
 
 def _print(text: str) -> None:
@@ -92,7 +86,7 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
     """Return (text, exit_code). Exit: 0 healthy · 1 something unusable · 2 could not scan."""
     current = settings.settings()
     if verb in {"help", "-h", "--help", "?"}:
-        return USAGE + "\n\n" + settings.describe(), 0
+        return usage() + "\n\n" + settings.describe(), 0
     if verb in {"version", "-v", "--version"}:
         return f"🧩 {version.stamp()} — {version.in_gateway_hint()}", 0
     if verb == "cfg":
@@ -147,7 +141,7 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
         return render.render_dead(report), (1 if _dead(report) else 0)
     if verb == "added":
         return render.render_added(report, _days(extra_args)), 0
-    return f"Unknown argument '{verb}'.\n\n{USAGE}", 2
+    return f"Unknown argument '{verb}'.\n\n{usage()}", 2
 
 
 def _dead(report: dict) -> list[dict]:
@@ -176,8 +170,7 @@ def will_measure(verb: str) -> bool:
 def measuring_note() -> str:
     current = settings.settings()
     models = len(engine.configured_models()) + len(current.shortlist_models())
-    return (f"⏳ NVIDIA NIM — measuring {models} models live "
-            f"(worst case ~{current.ttft_seconds:g}s if one is wedged)…")
+    return t("progress.measuring", models=models, ttft=f"{current.ttft_seconds:g}")
 
 
 def slash_command_with_progress(ctx, raw_args: str = "", **kwargs) -> str | None:

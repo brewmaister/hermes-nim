@@ -34,6 +34,8 @@ class Settings:
     # that black-holes for 25 s is unusable in chat whether or not a second attempt agrees. The
     # hysteresis still needs two *runs* before anything is called dead, so this cannot fake a death.
     live_attempts: int = 1
+    # "auto" follows NIM_LANGUAGE → HERMES_LANGUAGE → display.language; or pin "en"/"es".
+    language: str = "auto"
 
     def with_env(self) -> "Settings":
         """Env wins over config: cron scripts have no ctx, and ad-hoc runs need to override."""
@@ -55,6 +57,8 @@ class Settings:
         if os.environ.get("NIM_LIVE"):
             changes["live_default"] = os.environ["NIM_LIVE"].strip().lower() not in {
                 "0", "false", "no", "off"}
+        if os.environ.get("NIM_LANGUAGE"):
+            changes["language"] = os.environ["NIM_LANGUAGE"]
         if os.environ.get("NIM_LIVE_ATTEMPTS"):
             try:
                 changes["live_attempts"] = max(1, int(os.environ["NIM_LIVE_ATTEMPTS"]))
@@ -124,6 +128,7 @@ def settings() -> Settings:
             live_grace_seconds=_as_float(configured.get("live_grace_seconds"),
                                          values.live_grace_seconds),
             live_attempts=_as_int(configured.get("live_attempts"), values.live_attempts),
+            language=str(configured.get("language") or values.language),
         )
     return values.with_env()
 
@@ -141,7 +146,8 @@ def describe() -> str:
         f"(/nim probes on every call; /nim cached is the instant view)\n"
         f"· live_grace_seconds: {current.live_grace_seconds:g} (reuse a scan younger than this)\n"
         f"· live_attempts: {current.live_attempts} (interactive /nim; /nim probe uses "
-        f"{current.attempts})"
+        f"{current.attempts})\n"
+        f"· language: {current.language} (auto follows display.language; en/es shipped)"
     )
 
 

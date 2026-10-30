@@ -412,47 +412,21 @@ def severity(result: dict) -> str:
 
 
 def metrics(result: dict) -> str:
-    """Compact evidence for a one-line list: ``0.41s``, ``flaky 1/2``, ``stalled``.
+    """Compatibility shim: the words live in :mod:`nim.render` (they are localized there).
 
-    Deliberately separate from :func:`label`: that one is the sentence a dead-model alert needs, this
-    is what fits after a model name without wrapping a phone screen three times.
+    The engine measures and remembers; it does not choose language. Kept as a delegator so the cron
+    script and older callers that reach for ``engine.metrics`` are not broken by the move.
     """
-    status = str(result.get("status") or "?")
-    attempts = result.get("attempts") or 1
-    okays = result.get("ok_attempts") or 0
-    if status == "ok":
-        return f"{result.get('ttft_s')}s"
-    if status in {"flaky", "throttled"}:
-        return f"{status} {okays}/{attempts}"
-    return {"stall": "stalled", "eol": "retired", "not_provisioned": "not provisioned",
-            "rate_limited": "rate limited", "auth_error": "auth rejected"}.get(status, status)
+    from . import render
+
+    return render.metrics(result)
 
 
 def label(result: dict) -> str:
-    """One line per model, in the words a human would use."""
-    status = str(result.get("status") or "?")
-    attempts = result.get("attempts") or 1
-    if status == "ok":
-        return f"ok {result.get('ttft_s')}s ({result.get('ok_attempts')}/{attempts})"
-    if status == "flaky":
-        fails = [trial for trial in result.get("trials") or [] if not trial.startswith("ok")]
-        stalls = [float(trial.split(":")[1]) for trial in fails if trial.startswith("stall")]
-        why = f"worst stall {max(stalls):.0f}s" if stalls else ", ".join(
-            sorted({trial.split(":")[0] for trial in fails}))
-        return f"FLAKY — only {result.get('ok_attempts')}/{attempts} answered ({why})"
-    if status == "throttled":
-        return f"ok but throttled — {result.get('ok_attempts')}/{attempts} answered, rest 429"
-    if status == "stall":
-        return f"STALL — zero bytes on all {attempts} attempts"
-    if status == "eol":
-        return f"EOL {result.get('eol_at', 'unknown date')}"
-    if status == "not_provisioned":
-        return "404 not provisioned for this account"
-    if status == "rate_limited":
-        return "429 throttled on every attempt"
-    if status == "auth_error":
-        return "auth rejected — check NVIDIA_API_KEY"
-    return status
+    """Compatibility shim onto :func:`nim.render.label` — localized, one sentence."""
+    from . import render
+
+    return render.label(result)
 
 
 # --------------------------------------------------------------------------- state

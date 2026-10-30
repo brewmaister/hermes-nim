@@ -1,0 +1,128 @@
+# hermes-nim — Español (México).
+#
+# Registro: el de un colega técnico, no el de un manual. Nada de "espanglish" innecesario; los
+# identificadores de modelo, los verbos de comando y las palabras que ya son estándar en la jerga
+# (fallback se traduce como "respaldo", throttled como "limitado") se quedan legibles.
+#
+# Los glifos (🧠 ⚡ ★ ✓ ⚠ ✗) no se traducen: son etiquetas. `{placeholders}` tampoco.
+
+header:
+  cached: "**NVIDIA NIM** · {age} · {models} modelos"
+  known: "**NVIDIA NIM** — {models} modelos conocidos"
+  probe: "**NVIDIA NIM escaneo** · ahora mismo · {models} modelos · {attempts}× cada uno"
+  aborted: "**NVIDIA NIM escaneo** — abortado"
+  stale_badge: " · ⏳ viejo"
+
+age:
+  seconds: "hace {n}s"
+  minutes: "hace {n} min"
+  hours: "hace {n} h"
+  days: "hace {n} d"
+  unknown: "antigüedad desconocida"
+
+status:
+  flaky: "inestable {ok}/{attempts}"
+  throttled: "limitado {ok}/{attempts}"
+  stalled: "colgado"
+  retired: "retirado"
+  not_provisioned: "sin aprovisionar"
+  rate_limited: "límite 429"
+  auth_rejected: "credencial rechazada"
+
+label:
+  ok: "ok {seconds}s ({ok}/{attempts})"
+  flaky: "INESTABLE — solo {ok}/{attempts} respondieron ({why})"
+  flaky_worst: "peor espera {seconds}s"
+  throttled: "responde pero limitado — {ok}/{attempts}, el resto 429"
+  stall: "COLGADO — cero bytes en los {attempts} intentos"
+  eol: "FIN DE VIDA {when}"
+  eol_unknown: "FIN DE VIDA sin fecha"
+  not_provisioned: "404 sin aprovisionar en esta cuenta"
+  rate_limited: "429 en todos los intentos"
+  auth_error: "credencial rechazada — revisa NVIDIA_API_KEY"
+
+role:
+  fallback: "respaldo {n}"
+  free: "gratis"
+  moa: "moa"
+  shortlist: "candidato"
+
+rec:
+  line: "**★ recomendado** {model} — {evidence}"
+  none: "**★ recomendado** nada — ningún modelo respondió todos los intentos"
+  none_slow: "**★ recomendado** nada por debajo de {cap}s — ahora mismo los modelos sanos son más lentos que eso"
+  ctx: "{ctx} de contexto"
+
+foot:
+  catalog: "catálogo: {listed} listados · {tracked} rastreados"
+  catalog_extra: " (las bajas se guardan en el historial)"
+  catalog_failed: "catálogo: /v1/models no respondió — no se rastrearon altas ni bajas"
+  hints: "/nim probe · /nim speed · /nim dead · /nim catalog"
+  stale: "⚠️ estos veredictos tienen más de 7 h — puede que el vigilante no esté corriendo. /nim probe para medir ahora."
+  more: "… y {hidden} más (ver /nim catalog)"
+  since: "desde el último escaneo:"
+
+cred:
+  key: "🔑 llave de NVIDIA rechazada — HTTP {code}: {detail}"
+  not_probed: "   No se probó ningún modelo: el problema es la credencial, no los modelos."
+  fix: "   Corrige NVIDIA_API_KEY en ~/.hermes/.env y luego /nim probe."
+  below: "   Abajo está el último escaneo bueno ({age}), sin cambios."
+  no_detail: "sin detalle en la respuesta"
+
+speed:
+  header: "**NVIDIA NIM velocidad** · ahora mismo · {attempts}× cada uno · mediana del primer byte"
+  cannot: "**NVIDIA NIM velocidad** — no se puede medir"
+  error: "**NVIDIA NIM velocidad** — {error}"
+  none: "Ningún modelo respondió — no hay nada que medir."
+  finish: "{seconds}s para terminar"
+  flaky: "solo {ok}/{attempts} respondieron"
+  unmeasured: "sin medición (nunca emitieron un byte): {models}"
+  note: "el primer byte es lo que se siente rápido; 'terminar' es la respuesta completa de 32 tokens, así que refleja tokens/s. Mediana, no promedio: un cuelgue es un evento, no una velocidad."
+  fastest: "más rápido ahora: {model} — {seconds}s"
+
+empty:
+  no_scan: "**NVIDIA NIM** — todavía no hay escaneo.\n\n/nim probe revisa los modelos que usa tu config (~30 s).\n/nim cfg muestra cuáles son sin tocar la red."
+  no_scan_probe: "**NVIDIA NIM** — todavía no hay escaneo; corre /nim probe."
+  no_scan_catalog: "**NVIDIA NIM** — todavía no hay escaneo; corre /nim probe primero (el catálogo se lee durante el escaneo)."
+  catalog_failed: "**NVIDIA NIM** — /v1/models no respondió en el último escaneo."
+  cfg_none: "**NVIDIA NIM** — no hay modelos con `provider: nvidia` en config.yaml.\nNo hay nada que vigilar; agrega uno, o usa /nim probe para revisar solo la lista de candidatos."
+  error: "**NVIDIA NIM** — {error}"
+
+catalog:
+  header: "**NVIDIA NIM catálogo** — {models} modelos listados"
+  dropped: "· {count} dados de baja desde el último escaneo: {models}"
+  verified: "· verificados respondiendo: {models}"
+  never_probed: "· {count} nunca probados (no están en tu config ni en candidatos)"
+  footnote: "Que un modelo aparezca no prueba nada: /v1/models incluye ids que esta cuenta no puede llamar (404) y ids que responden cero bytes."
+
+dead:
+  header: "**NVIDIA NIM** — {count} sin usar"
+  none: "**NVIDIA NIM** — nada está caído en el último escaneo."
+  dropped: "dados de baja de /v1/models ({count}): {models}"
+
+added:
+  header: "**NVIDIA NIM** — {count} modelo(s) vistos por primera vez en los últimos {days} días"
+  none: "**NVIDIA NIM** — sin modelos nuevos en los últimos {days} días{hint}."
+  tracking: " (rastreando desde {date})"
+  footnote: "Los recién llegados se prueban una vez al aparecer; la mayoría resulta ser 404 sin aprovisionar para esta cuenta."
+
+cfg:
+  header: "**NVIDIA NIM** — {count} modelo(s) NIM en config.yaml"
+
+usage:
+  nim: "/nim — escaneo en vivo, ahora (mide cada modelo; ~15-40 s)"
+  cached: "/nim cached — el último escaneo, al instante, sin red"
+  probe: "/nim probe — escaneo en vivo de los modelos de tu config + candidatos\n            (~30-60 s: un modelo que nunca responde cuesta dos esperas de 25 s)"
+  speed: "/nim speed [n] — escaneo cronometrado: primer byte y respuesta completa, mediana de n intentos (3 por defecto)"
+  catalog: "/nim catalog — qué lista /v1/models, y qué se cayó de la lista"
+  dead: "/nim dead — todo lo que no sirve ahora"
+  added: "/nim added [días] — modelos que aparecieron recientemente (7 por defecto)"
+  cfg: "/nim cfg — qué modelos NIM referencia config.yaml, sin red"
+  json: "/nim json — el último escaneo en JSON"
+  tail: "/nim version · /nim help"
+
+progress:
+  measuring: "⏳ NVIDIA NIM — midiendo {models} modelos en vivo (peor caso ~{ttft}s si uno está atorado)…"
+
+settings:
+  intro: "ajustes (config.yaml → plugins.entries.hermes-nim.settings, o variables NIM_*):"

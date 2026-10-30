@@ -577,6 +577,89 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertIn("🧠29", flat)
 
 
+class LocalizationTests(unittest.TestCase):
+    """Every string comes from locales/; a missing key must degrade to English, never to a key name."""
+
+    def setUp(self):
+        from nim import i18n
+
+        i18n.reset_cache()
+
+    def tearDown(self):
+        from nim import i18n
+
+        i18n.reset_cache()
+
+    def _report(self):
+        return _fake_report({"nvidia/nemotron-3-ultra-550b-a55b": "ok", "a/x": "stall"})
+
+    def test_english_is_the_source_and_the_fallback(self):
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
+            self.assertIn("models", render.render_cached(self._report()))
+
+    def test_spanish_renders_the_same_report_in_spanish(self):
+        from nim import i18n
+
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
+            i18n.reset_cache()
+            text = render.render_cached(self._report())
+        self.assertIn("modelos", text)
+        self.assertIn("recomendado", text)
+        self.assertIn("colgado", text)        # status.stalled
+        self.assertIn("respaldo 1", text)     # role.fallback
+        self.assertNotIn("recommended", text)
+        self.assertNotIn("stalled", text)
+        # the /nim dead view has its own wording — inside the same language scope
+        from nim import i18n
+
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
+            i18n.reset_cache()
+            self.assertIn("sin usar", render.render_dead(self._report()))
+
+    def test_help_text_is_translated(self):
+        from nim import commands
+
+        from nim import i18n
+
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
+            i18n.reset_cache()
+            self.assertIn("escaneo en vivo", commands.usage())
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
+            i18n.reset_cache()
+            self.assertIn("live scan, now", commands.usage())
+
+    def test_missing_key_falls_back_to_english_not_to_the_key(self):
+        from nim import i18n
+
+        self.assertEqual(i18n.t("does.not.exist", lang="es"), "does.not.exist")
+        # a key only English has: English text, in Spanish mode
+        i18n._catalog.cache_clear()
+        self.assertEqual(i18n.t("speed.none", lang="es"), "Ningún modelo respondió — no hay nada que medir.")
+
+    def test_a_translation_with_a_broken_placeholder_does_not_raise(self):
+        from nim import i18n
+
+        # es.yaml's rec.line wants {model}/{evidence}; asking for a key with wrong fields must not blow up
+        self.assertIsInstance(i18n.t("rec.line", lang="es"), str)
+
+    def test_every_english_key_exists_in_every_shipped_language(self):
+        from nim import i18n
+
+        english = i18n._catalog("en")
+        self.assertTrue(english)
+        for language in i18n.available():
+            catalog = i18n._catalog(language)
+            missing = sorted(set(english) - set(catalog))
+            self.assertEqual(missing, [], f"{language}.yaml is missing {missing}")
+
+    def test_unknown_language_falls_back_to_english_output(self):
+        from nim import i18n
+
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "tlh"}):
+            i18n.reset_cache()
+            self.assertIn("models", render.render_cached(self._report()))
+
+
 class BrandTests(unittest.TestCase):
     """Every view names the provider. 'NIM' alone is a crate, a compiler, and a dozen other things."""
 
@@ -732,8 +815,9 @@ class RenderTests(unittest.TestCase):
 
     def test_paths_become_roles(self):
         self.assertEqual(render.short_where(["fallback_providers[2]"]), "fallback 3")
-        self.assertEqual(render.short_where(["delegation.backends.model_map.options[2]"]),
-                         "free route")
+        # role words now come from the locale catalog; English says "free" (it used to say
+        # "free route" and get shortened later — one name, one place)
+        self.assertEqual(render.short_where(["delegation.backends.model_map.options[2]"]), "free")
 
     def test_dead_and_added(self):
         report = _fake_report({"a": "ok", "b": "not_provisioned"})

@@ -42,6 +42,7 @@ label:
   auth_error: "auth rejected — check NVIDIA_API_KEY"
 
 role:
+  recommended: "recommended"
   fallback: "fallback {n}"
   free: "free"
   moa: "moa"

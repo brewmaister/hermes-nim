@@ -172,9 +172,13 @@ def _roles(result: dict, used: dict[str, list[str]]) -> str:
 
 
 def _line(result: dict, used: dict[str, list[str]], recommended: bool = False) -> str:
-    """One model, one line: mark, short name, then the facts, separated by middots."""
+    """One model, one line: mark, short name, then the facts, separated by middots.
+
+    The recommended row says so in words and drops its config role: showing `★ … · shortlist` told
+    the reader "candidate" next to the star, which contradicts the star. One row, one claim.
+    """
     bits = [bit for bit in (_quality_tag(result), _speed_tag(result),
-                            _roles(result, used)) if bit]
+                            t("role.recommended") if recommended else _roles(result, used)) if bit]
     mark = "★" if recommended else MARKS.get(engine.severity(result), "·")
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
 

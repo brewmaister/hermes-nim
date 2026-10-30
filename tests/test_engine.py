@@ -563,6 +563,24 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertNotIn("30B", line)
         self.assertIn("30b", line)   # it is in the name, which is where a reader looks for it
 
+    def test_the_star_row_says_recommended_instead_of_its_config_role(self):
+        report = self._report()
+        report["configured_in"] = {"minimaxai/minimax-m3.1-flash": ["shortlist"]}
+        star = next(line for line in render.render_cached(report).splitlines()
+                    if line.startswith("★ "))
+        self.assertIn("recommended", star)
+        self.assertNotIn("shortlist", star)   # one row, one claim
+
+    def test_the_star_row_is_spanish_too(self):
+        from nim import i18n
+
+        report = self._report()
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
+            i18n.reset_cache()
+            star = next(line for line in render.render_cached(report).splitlines()
+                        if line.startswith("★ "))
+        self.assertIn("recomendado", star)
+
     def test_title_is_bold_and_has_no_glyph(self):
         first = render.render_cached(self._report()).splitlines()[0]
         self.assertTrue(first.startswith("**NVIDIA NIM**"), first)

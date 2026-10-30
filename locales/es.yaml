@@ -42,6 +42,7 @@ label:
   auth_error: "credencial rechazada — revisa NVIDIA_API_KEY"
 
 role:
+  recommended: "recomendado"
   fallback: "respaldo {n}"
   free: "gratis"
   moa: "moa"

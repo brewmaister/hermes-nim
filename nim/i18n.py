@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -118,12 +117,12 @@ def _config_language() -> str:
         return ""
 
 
-_CACHE: tuple[float, str] | None = None
-_CACHE_TTL_S = 5.0
-
-
+@lru_cache(maxsize=1)
 def _plugin_language() -> str:
-    """``plugins.entries.hermes-nim.settings.language``; empty when unset or ``auto``."""
+    """``plugins.entries.hermes-nim.settings.language``; empty when unset or ``auto``.
+
+    Cached because it re-reads config.yaml; cleared by :func:`reset_cache`.
+    """
     try:
         from .settings import settings
 
@@ -133,36 +132,40 @@ def _plugin_language() -> str:
     return "" if value in {"", "auto"} else value
 
 
-def language(*, override: str | bool | None = None) -> str:
-    """The language to render in. Never returns an id this plugin cannot serve.
+@lru_cache(maxsize=16)
+def _resolve(from_env: str, from_hermes: str, from_setting: str, from_display: str) -> str:
+    """Pure function of its inputs, so the cache can never serve a language its inputs do not imply.
 
-    Cached for a few seconds: ``t()`` runs dozens of times per report and re-reading config.yaml for
-    each line would be silly, while a long-lived cache would make ``/nim`` ignore a fresh setting.
+    That property is the whole point: an earlier version cached the *answer* for five seconds, which
+    meant a changed setting was ignored for a while and a test that set HERMES_LANGUAGE leaked
+    Spanish into the next test. Keying on the inputs makes every path fresh and the lookup free.
     """
+    for candidate in (from_env, from_hermes, from_setting, from_display):
+        value = str(candidate or "").strip().lower()
+        if value and value not in {"auto", "true"}:
+            return value
+    return FALLBACK_LANGUAGE
+
+
+def language(*, override: str | bool | None = None) -> str:
+    """The language to render in. Never returns an id this plugin cannot serve."""
     explicit = str(override or "").strip().lower()
     if explicit and explicit not in {"auto", "true"}:
         return explicit
-    global _CACHE
-    now = time.monotonic()
-    if _CACHE is not None and now - _CACHE[0] < _CACHE_TTL_S:
-        return _CACHE[1]
-    resolved = FALLBACK_LANGUAGE
-    for candidate in (os.environ.get(LANGUAGE_ENV), os.environ.get("HERMES_LANGUAGE"),
-                      _plugin_language(), _config_language()):
-        value = str(candidate or "").strip().lower()
-        if value and value not in {"auto", "true"}:
-            resolved = value
-            break
-    _CACHE = (now, resolved)
-    return resolved
+    return _resolve(
+        os.environ.get(LANGUAGE_ENV, ""),
+        os.environ.get("HERMES_LANGUAGE", ""),
+        _plugin_language(),
+        _config_language(),
+    )
 
 
 def reset_cache() -> None:
     """Drop cached language and catalogs — for tests and after a settings change."""
-    global _CACHE
-    _CACHE = None
     _catalog.cache_clear()
     _overlay.cache_clear()
+    _plugin_language.cache_clear()
+    _resolve.cache_clear()
 
 
 def t(key: str, *, lang: str | None = None, **fields) -> str:

@@ -411,6 +411,23 @@ def severity(result: dict) -> str:
     return "ok"
 
 
+def metrics(result: dict) -> str:
+    """Compact evidence for a one-line list: ``0.41s``, ``flaky 1/2``, ``stalled``.
+
+    Deliberately separate from :func:`label`: that one is the sentence a dead-model alert needs, this
+    is what fits after a model name without wrapping a phone screen three times.
+    """
+    status = str(result.get("status") or "?")
+    attempts = result.get("attempts") or 1
+    okays = result.get("ok_attempts") or 0
+    if status == "ok":
+        return f"{result.get('ttft_s')}s"
+    if status in {"flaky", "throttled"}:
+        return f"{status} {okays}/{attempts}"
+    return {"stall": "stalled", "eol": "retired", "not_provisioned": "not provisioned",
+            "rate_limited": "rate limited", "auth_error": "auth rejected"}.get(status, status)
+
+
 def label(result: dict) -> str:
     """One line per model, in the words a human would use."""
     status = str(result.get("status") or "?")
@@ -693,7 +710,7 @@ def scan_age_seconds(report: dict) -> float | None:
 
 
 __all__ = [
-    "params_from_id", "rank_key", "reliability", "median", "key_status",
+    "params_from_id", "rank_key", "reliability", "median", "key_status", "metrics",
     "DEFAULT_BASE", "STATE_VERSION", "api_key", "key_hint", "attempt", "probe", "catalog",
     "configured_models", "severity", "label", "load_state", "save_state", "scan",
     "credential_failure",

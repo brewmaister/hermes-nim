@@ -5,24 +5,39 @@ models still answer.
 
 ```
 /nim
-🧠 NIM — last scan 20 min ago · 7 models
+🧠 NIM · 14 min ago · 7 models
 
-✅ minimaxai/minimax-m3.1-flash — AA 29 family · ok 0.57s (2/2) · shortlist (recommended)
-✅ nvidia/nemotron-3-ultra-550b-a55b — AA 23 · ok 0.53s (2/2) · fallback 2, moa reference
-✅ nvidia/nemotron-3.5-lightning-30b-a3b — 30B · ok 0.29s (2/2) · free route, fallback 1
-✅ meta/muse-glimmer-30b — 30B · ok 3.28s (2/2) · shortlist
-✅ openai/gpt-oss-20b — 20B · ok 0.34s (2/2) · fallback 4
-⚠️ stepfun-ai/step-5-preview — FLAKY — only 1/2 answered (worst stall 25s) · shortlist
-❌ deepseek-ai/deepseek-v4.1-flash — STALL — zero bytes on all 2 attempts · fallback 3
+★ minimax-m3.1-flash — AA 29 · 0.41s · shortlist
+✓ nemotron-3-ultra-550b-a55b — AA 23 · 0.55s · fallback 2, moa
+✓ nemotron-3.5-lightning-30b-a3b — 0.25s · free, fallback 1
+✓ muse-glimmer-30b — 4.41s · shortlist
+✓ gpt-oss-20b — 0.23s · fallback 4
+✓ step-5-preview — 0.37s · shortlist
+✓ deepseek-v4.1-flash — 0.59s · fallback 3
 
-recommended: minimaxai/minimax-m3.1-flash — AA 29, 1000k ctx, 2/2 answered, 0.57s
+★ recommended: minimaxai/minimax-m3.1-flash — AA 29 · 1M ctx · 0.41s · 2/2
 catalog: 85 listed · 85 tracked
+
+/nim probe · /nim speed · /nim dead · /nim catalog
 ```
 
 - **`/nim`** — the last scan, instantly. No agent turn, no tokens.
 - **`/nim probe`** — live scan of the NIM models your config uses plus a shortlist of candidates.
 - **`hermes nim`** — the same engine from a shell, for scripts and cron (`--json` for machines).
 - **`scripts/nim-watch.py`** — the cron door: prints nothing unless something changed.
+
+### Why it looks like that
+
+- **One model, one line.** A phone gets ~40 characters before it wraps; the old lines were 95-110 and
+  turned seven models into twenty lines of broken text.
+- **The org prefix is dropped in lists** (`nvidia/nemotron-…` → `nemotron-…`) because it is noise in
+  every command that is not a config edit. Views where you *act* — `/nim dead`, `/nim cfg`, the
+  recommended footer, `/nim json` — keep the full id, so it is always copy-pasteable from somewhere.
+- **No repeated size.** `nemotron-3.5-lightning-30b-a3b` already says 30B; the tag only appears when
+  the id does not say it.
+- **A blank line instead of a header** between healthy, flaky and dead models.
+- **`★` marks the recommendation**, and the footer names it once with its evidence.
+- Roles are shortened (`free route` → `free`) but not abbreviated to codes nobody can read.
 
 ## Why this exists
 

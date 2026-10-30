@@ -200,12 +200,20 @@ class RankTests(unittest.TestCase):
             report["models"][model]["ok_attempts"] = 2
             report["models"][model]["ttft_s"] = 0.5
         text = render.render_cached(report)
-        first_model = next(line for line in text.splitlines() if line.startswith("✅"))
+        # one line per model, org prefix dropped, the top pick marked with a star
+        first_model = next(line for line in text.splitlines() if line.startswith("★"))
         # minimax carries a published AA index (29) and nemotron a lower one (23), so the published
         # score outranks the bigger parameter count — this is the case the size prior got wrong.
         self.assertIn("minimax-m3.1-flash", first_model)
-        self.assertIn("(recommended)", first_model)
-        self.assertIn("recommended: minimaxai/minimax-m3.1-flash", text)
+        self.assertNotIn("minimaxai/", first_model)
+        self.assertIn("★ recommended: minimaxai/minimax-m3.1-flash", text)
+        # model rows stay narrow enough not to wrap twice on a phone (the footer may run longer:
+        # it is the one line carrying a full id you would paste into config.yaml)
+        rows = [line for line in text.splitlines()
+                if line[:2] in {"★ ", "✓ ", "⚠ ", "✗ "}
+                and not line.startswith("★ recommended")]
+        self.assertTrue(rows)
+        self.assertLess(max(len(row) for row in rows), 70)
 
 
 class BenchmarkPriorTests(unittest.TestCase):
@@ -297,7 +305,8 @@ class SpeedTests(unittest.TestCase):
     def test_speed_is_ordered_fastest_first_with_both_timings(self):
         text = render.render_speed(self._report())
         fast = next(line for line in text.splitlines() if line.startswith("1. "))
-        self.assertIn("fast/model-30b", fast)
+        self.assertIn("model-30b", fast)
+        self.assertNotIn("fast/model-30b", fast)   # org prefix is dropped in the list
         self.assertIn("0.25s", fast)
         self.assertIn("0.9s to finish", fast)
         self.assertIn("0.2 / 0.3", fast)
@@ -387,8 +396,8 @@ class CredentialTests(unittest.TestCase):
         self.assertIn("NVIDIA_API_KEY", text)
         self.assertIn("last good scan", text)
         # the models are still shown, and none of them is claimed to be dead
-        self.assertIn("a/model-30b", text)
-        self.assertNotIn("❌", text)
+        self.assertIn("a", text)
+        self.assertNotIn("✗", text)
         self.assertIn("cannot measure", render.render_speed(report))
 
 
@@ -494,9 +503,9 @@ def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
 class RenderTests(unittest.TestCase):
     def test_cached_names_models_and_age(self):
         text = render.render_cached(_fake_report({"a": "ok", "b": "stall"}))
-        self.assertIn("a — ok 0.5s", text)
-        self.assertIn("b — STALL", text)
-        self.assertIn("last scan", text)
+        self.assertIn("★ a — 0.5s", text)
+        self.assertIn("✗ b — stalled", text)
+        self.assertIn("2 models", text)
 
     def test_cached_without_state_says_so(self):
         self.assertIn("no scan yet", render.render_cached({}))

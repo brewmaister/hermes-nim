@@ -55,26 +55,52 @@ def _grouped(report: dict) -> tuple[list[dict], list[dict], list[dict]]:
     return alive, warn, dead
 
 
-def _size_tag(result: dict) -> str:
-    """The vendor's own parameter count, when the id states one."""
-    size = engine.params_from_id(str(result.get("model") or ""))
-    return f"{size:g}B · " if size is not None else ""
+MARKS = {"ok": "✓", "warn": "⚠", "dead": "✗"}
+
+# Full role names cost 10-15 characters each on a line that already carries a 30-character model id.
+ROLE_SHORT = (("moa reference", "moa"), ("free route", "free"), ("shortlist", "shortlist"))
+
+
+def human_ctx(tokens: int | None) -> str:
+    """1_000_000 -> 1M, 262_144 -> 262k: a context window is a headline, not a measurement."""
+    if not tokens:
+        return ""
+    if tokens >= 1_000_000:
+        return f"{tokens / 1_000_000:g}M"
+    return f"{round(tokens / 1000)}k"
+
+
+def short_model(model: str) -> str:
+    """Drop the org prefix. `nvidia/nemotron-3-ultra-550b-a55b` is unambiguous without `nvidia/`."""
+    return str(model or "").split("/", 1)[-1]
 
 
 def _quality_tag(result: dict) -> str:
-    """Published score when one exists, else the id's parameter count, else nothing."""
-    tag = benchmarks.describe(str(result.get("model") or ""))
-    if tag:
-        return f"{tag} · "
-    return _size_tag(result)
+    """Published score when one exists, else the id's parameter count — and never both."""
+    model = str(result.get("model") or "")
+    published = benchmarks.lookup(model)
+    if published is not None:
+        return f"AA {published.index:g}"
+    size = engine.params_from_id(model)
+    if size is None:
+        return ""
+    # The size is already in the name for most ids; repeating it is just width.
+    return "" if f"{size:g}b" in model.lower() else f"{size:g}B"
 
 
-def _line(result: dict, used: dict[str, list[str]], mark: str, recommended: bool = False) -> str:
+def _roles(result: dict, used: dict[str, list[str]]) -> str:
     where = short_where((used or {}).get(result["model"]) or [])
-    suffix = f" · {where}" if where else ""
-    tail = " (recommended)" if recommended else ""
-    return (f"{mark} {result['model']} — {_quality_tag(result)}"
-            f"{engine.label(result)}{suffix}{tail}")
+    for full, short in ROLE_SHORT:
+        where = where.replace(full, short)
+    return where
+
+
+def _line(result: dict, used: dict[str, list[str]], recommended: bool = False) -> str:
+    """One model, one line: mark, short name, then the facts, separated by middots."""
+    bits = [bit for bit in (_quality_tag(result), engine.metrics(result),
+                            _roles(result, used)) if bit]
+    mark = "★" if recommended else MARKS.get(engine.severity(result), "·")
+    return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
 
 
 def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
@@ -87,11 +113,11 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     pick = engine.recommended(report)
     pick_model = pick.get("model") if pick else None
     for result in sorted(alive, key=engine.rank_key):
-        lines.append(_line(result, used, "✅", recommended=result["model"] == pick_model))
-    for result in warn:
-        lines.append(_line(result, used, "⚠️"))
-    for result in dead:
-        lines.append(_line(result, used, "❌"))
+        lines.append(_line(result, used, recommended=result["model"] == pick_model))
+    for group in (warn, dead):
+        if group:
+            lines.append("")   # a blank line is cheaper than a header row
+            lines += [_line(result, used) for result in group]
     if len(lines) > limit:
         hidden = len(lines) - limit
         lines = lines[:limit] + [f"… and {hidden} more (see /nim catalog)"]
@@ -105,8 +131,8 @@ def best_line(report: dict) -> str:
         alive = [result for result in (report.get("models") or {}).values()
                  if engine.severity(result) == "ok"]
         if not alive:
-            return "recommended: nothing — no model answered every attempt"
-        return (f"recommended: nothing under {engine.RECOMMEND_MAX_TTFT_S:g}s — "
+            return "★ recommended: nothing — no model answered every attempt"
+        return (f"★ recommended: nothing under {engine.RECOMMEND_MAX_TTFT_S:g}s — "
                 f"the healthy models are all slower than that right now")
     model = str(pick.get("model") or "")
     published = benchmarks.lookup(model)
@@ -114,13 +140,14 @@ def best_line(report: dict) -> str:
     if published is not None:
         why.append(f"AA {published.index:g}")
         if published.context:
-            why.append(f"{published.context // 1000}k ctx")
+            why.append(f"{human_ctx(published.context)} ctx")
     else:
         size = engine.params_from_id(model)
         if size is not None:
             why.append(f"{size:g}B")
-    why += [f"{pick.get('ok_attempts')}/{pick.get('attempts')} answered", f"{pick.get('ttft_s')}s"]
-    return f"recommended: {model} — " + ", ".join(why)
+    why += [f"{pick.get('ttft_s')}s", f"{pick.get('ok_attempts')}/{pick.get('attempts')}"]
+    # The footer keeps the full id on purpose: this is the line you paste into config.yaml.
+    return f"★ recommended: {model} — " + " · ".join(why)
 
 
 def credential_block(report: dict) -> list[str]:
@@ -150,8 +177,8 @@ def render_speed(report: dict) -> str:
     answered = [m for m in models if m.get("ttft_median_s") is not None]
     silent = [m for m in models if m.get("ttft_median_s") is None]
     answered.sort(key=lambda m: (m.get("ttft_median_s") or 9e9, m.get("total_s") or 9e9))
-    lines = [f"⚡ NIM speed — {report.get('attempts')} attempt(s) each · "
-             f"just now · time to first byte, median"]
+    lines = [f"⚡ NIM speed · just now · {report.get('attempts')}× each · "
+             f"median time to first byte"]
     lines.append("")
     if not answered:
         lines.append("No model answered at all — nothing to time.")
@@ -164,7 +191,7 @@ def render_speed(report: dict) -> str:
         tail = f" · {total}s to finish" if total is not None else ""
         flaky = ("" if result.get("ok_attempts") == result.get("attempts")
                  else f" · only {result.get('ok_attempts')}/{result.get('attempts')} answered")
-        lines.append(f"{position}. {model} — {result.get('ttft_median_s')}s"
+        lines.append(f"{position}. {short_model(model)} — {result.get('ttft_median_s')}s"
                      f" ({spread}){tail}{flaky}")
     if silent:
         lines += ["", "no measurement (never emitted a byte): "
@@ -173,7 +200,8 @@ def render_speed(report: dict) -> str:
     lines += ["", "first byte is what feels fast; 'to finish' is the whole 32-token answer, so it "
                   "tracks tokens/s. Median, not mean: one stall is an event, not a speed."]
     if fastest:
-        lines.append(f"fastest right now: {fastest.get('model')} — {fastest.get('ttft_median_s')}s")
+        lines.append(f"fastest right now: {short_model(fastest.get('model'))} — "
+                     f"{fastest.get('ttft_median_s')}s")
     return "\n".join(lines)
 
 
@@ -191,9 +219,8 @@ def render_probe(report: dict) -> str:
     if banner:
         return "\n".join([f"🧠 NIM scan — aborted", ""] + banner)
     models = report.get("models") or {}
-    header = (f"🧠 NIM scan — {len(models)} models · "
-              f"{report.get('attempts')} attempt(s) each · "
-              f"just now")
+    header = (f"🧠 NIM scan · just now · {len(models)} models · "
+              f"{report.get('attempts')}× each")
     lines = [header, ""] + model_lines(report) + changes_block(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
     return "\n".join(lines)
@@ -225,10 +252,10 @@ def render_cached(report: dict) -> str:
         return "\n".join(lines)
     age = engine.scan_age_seconds(report)
     models = report.get("models") or {}
-    lines = [f"🧠 NIM — last scan {human_age(age)} · {len(models)} models", ""]
+    lines = [f"🧠 NIM · {human_age(age)} · {len(models)} models", ""]
     lines += model_lines(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
-    lines += ["", "/nim probe to re-scan · /nim dead · /nim added · /nim catalog"]
+    lines += ["", "/nim probe · /nim speed · /nim dead · /nim catalog"]
     return "\n".join(lines)
 
 

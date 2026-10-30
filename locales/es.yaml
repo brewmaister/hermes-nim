@@ -4,7 +4,7 @@
 # identificadores de modelo, los verbos de comando y las palabras que ya son estándar en la jerga
 # (fallback se traduce como "respaldo", throttled como "limitado") se quedan legibles.
 #
-# Los glifos (🧠 ⚡ ★ 🆗 ⚠️ 💀 🆕) no se traducen: son etiquetas. `{placeholders}` tampoco.
+# Los glifos (🧠 ⚡ ⭐️ ✔️ ⚠️ 🔴 🟢 🛠 🆕) no se traducen: son etiquetas. `{placeholders}` tampoco.
 
 header:
   cached: "**NVIDIA NIM** · {age} · tus {models} modelos{board}"
@@ -53,9 +53,9 @@ role:
   shortlist: "candidato"
 
 rec:
-  line: "**★ recomendado** {model} — {evidence}"
-  none: "**★ recomendado** nada — ningún modelo respondió todos los intentos"
-  none_slow: "**★ recomendado** nada por debajo de {cap}s — ahora mismo los modelos sanos son más lentos que eso"
+  line: "**⭐️ recomendado** {model} — {evidence}"
+  none: "**⭐️ recomendado** nada — ningún modelo respondió todos los intentos"
+  none_slow: "**⭐️ recomendado** nada por debajo de {cap}s — ahora mismo los modelos sanos son más lentos que eso"
   ctx: "{ctx} de contexto"
 
 foot:
@@ -101,8 +101,8 @@ catalog:
   verified: "· verificados respondiendo: {models}"
   surveyed: "medido {age}"
   never_surveyed: "sin medir (/nim survey)"
-  online: "🆗 {count} responden: {models}"
-  offline: "💀 {count} sin servicio:"
+  online: "✔️ {count} responden: {models}"
+  offline: "🔴 {count} sin servicio:"
   line: "  • {model} — {why}"
   more: "  … {count} más (todo en /nim json)"
   never_probed: "· {count} nunca probados (no están en tu config ni en la lista de candidatos)"
@@ -137,10 +137,10 @@ usage:
 
 board:
   header: "**NVIDIA NIM** · medido {age} · {listed} listados"
-  counts: "🆗 {chat} de chat · {utility} utilitarios en línea · 💀 {offline} caídos"
-  section_chat: "chat — usables ahora"
-  section_utility: "utilitarios (no son de chat)"
-  offline_header: "caídos — {count}"
+  counts: "🟢 {chat} de chat · 🛠 {utility} · 🔴 {offline} caídos"
+  section_chat: "🟢 chat — usables ahora"
+  section_utility: "🛠 utilitarios"
+  offline_header: "🔴 {count} caídos"
   offline_group: "  · {count} {why}"
   yours: "tuyo"
   watching: "vigilado"

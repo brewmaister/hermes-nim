@@ -21,9 +21,10 @@ MAX_LINES = 26  # keep a chat reply readable; the artifact files hold the full p
 # about now — say so in the header rather than leaving the reader to do arithmetic on "7.2 h ago".
 STALE_AFTER_S = 7 * 3600
 
-# Say the status, not a tick: ✅/🆗 reads "works", 💀 reads "gone". A tick next to a model you cannot
-# call was the confusing part — it looked like approval rather than a health verdict.
-MARKS = {"ok": "🆗", "warn": "⚠️", "dead": "💀"}
+# Colour + shape per verdict, so a row reads at a glance without parsing words:
+#   🟢 ok ✔️    🟠/⚠️ degraded    🔴 dead    ⭐️ recommended
+MARKS = {"ok": "✔️", "warn": "⚠️", "dead": "🔴"}
+PICK_MARK = "⭐️"
 
 # One glyph per fact, so a row can be read at a glance instead of parsed:
 #   🧠 published benchmark index   ⚡ time to first byte
@@ -214,13 +215,13 @@ def _line(result: dict, used: dict[str, list[str]], recommended: bool = False,
           new: set[str] | None = None) -> str:
     """One model, one line: mark, short name, then the facts, separated by middots.
 
-    The recommended row says so in words and drops its config role: showing `★ … · shortlist` told
+    The recommended row says so in words and drops its config role: showing `⭐️ … · shortlist` told
     the reader "candidate" next to the star, which contradicts the star. One row, one claim.
     """
     fresh = NEW_MARK if new and result["model"] in new else ""
     bits = [bit for bit in (fresh, _quality_tag(result), _speed_tag(result),
                             t("role.recommended") if recommended else _roles(result, used)) if bit]
-    mark = "★" if recommended else MARKS.get(engine.severity(result), "·")
+    mark = PICK_MARK if recommended else MARKS.get(engine.severity(result), "·")
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
 
 
@@ -447,7 +448,7 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(t("board.yours"))
             elif model in watched_only:
                 bits.append(t("board.watching"))
-            mark = "★" if model == pick_model else MARKS["ok"]
+            mark = PICK_MARK if model == pick_model else MARKS["ok"]
             lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
         if len(chat) > limit:
             lines.append(t("foot.more", hidden=len(chat) - limit))

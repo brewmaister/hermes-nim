@@ -1,6 +1,6 @@
 # hermes-nim — English (source language).
 #
-# Flat `key: text` pairs; `{placeholders}` are filled by nim.i18n.t(). Keep the glyphs (🧠 ⚡ ★ 🆗 ⚠️ 💀 🆕)
+# Flat `key: text` pairs; `{placeholders}` are filled by nim.i18n.t(). Keep the glyphs (🧠 ⚡ ⭐️ ✔️ ⚠️ 🔴 🟢 🛠 🆕)
 # in translations: they are labels, not decoration.
 #
 # The user-facing contract of this file: every key here must also exist in every other shipped
@@ -54,9 +54,9 @@ role:
   shortlist: "shortlist"
 
 rec:
-  line: "**★ recommended** {model} — {evidence}"
-  none: "**★ recommended** nothing — no model answered every attempt"
-  none_slow: "**★ recommended** nothing under {cap}s — the healthy models are all slower than that right now"
+  line: "**⭐️ recommended** {model} — {evidence}"
+  none: "**⭐️ recommended** nothing — no model answered every attempt"
+  none_slow: "**⭐️ recommended** nothing under {cap}s — the healthy models are all slower than that right now"
   ctx: "{ctx} ctx"
 
 foot:
@@ -102,8 +102,8 @@ catalog:
   verified: "· verified answering: {models}"
   surveyed: "surveyed {age}"
   never_surveyed: "never surveyed (/nim survey)"
-  online: "🆗 {count} answering: {models}"
-  offline: "💀 {count} not useable:"
+  online: "✔️ {count} answering: {models}"
+  offline: "🔴 {count} not useable:"
   line: "  • {model} — {why}"
   more: "  … {count} more (all of it in /nim json)"
   never_probed: "· {count} never probed (not in your config or shortlist)"
@@ -138,10 +138,10 @@ usage:
 
 board:
   header: "**NVIDIA NIM** · surveyed {age} · {listed} listed"
-  counts: "🆗 {chat} chat · {utility} utility online · 💀 {offline} offline"
-  section_chat: "chat — usable now"
-  section_utility: "utility (not for chat)"
-  offline_header: "offline — {count}"
+  counts: "🟢 {chat} chat · 🛠 {utility} · 🔴 {offline} offline"
+  section_chat: "🟢 chat — usable now"
+  section_utility: "🛠 utility"
+  offline_header: "🔴 {count} offline"
   offline_group: "  · {count} {why}"
   yours: "yours"
   watching: "watching"

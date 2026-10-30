@@ -201,17 +201,17 @@ class RankTests(unittest.TestCase):
             report["models"][model]["ttft_s"] = 0.5
         text = render.render_cached(report)
         # one line per model, org prefix dropped, the top pick marked with a star
-        first_model = next(line for line in text.splitlines() if line.startswith("★"))
+        first_model = next(line for line in text.splitlines() if line.startswith("⭐"))
         # minimax carries a published AA index (29) and nemotron a lower one (23), so the published
         # score outranks the bigger parameter count — this is the case the size prior got wrong.
         self.assertIn("minimax-m3.1-flash", first_model)
         self.assertNotIn("minimaxai/", first_model)
-        self.assertIn("**★ recommended** minimaxai/minimax-m3.1-flash", text)
+        self.assertIn("**⭐️ recommended** minimaxai/minimax-m3.1-flash", text)
         # model rows stay narrow enough not to wrap twice on a phone (the footer may run longer:
         # it is the one line carrying a full id you would paste into config.yaml)
         rows = [line for line in text.splitlines()
-                if line[:2] in {"★ ", "✓ ", "⚠ ", "✗ "}
-                and not line.startswith("★ recommended")]
+                if line.startswith(("⭐", "✔", "⚠", "🔴"))
+                and "recommended" not in line]
         self.assertTrue(rows)
         self.assertLess(max(len(row) for row in rows), 70)
 
@@ -397,7 +397,7 @@ class CredentialTests(unittest.TestCase):
         self.assertIn("last good scan", text)
         # the models are still shown, and none of them is claimed to be dead
         self.assertIn("a", text)
-        self.assertNotIn("✗", text)
+        self.assertNotIn("🔴", text)
         self.assertIn("cannot measure", render.render_speed(report))
 
 
@@ -573,7 +573,7 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertNotIn("🧠", lightning)
         self.assertIn("⚡0.33s", lightning)
         # a stalled model has no duration, so it carries no ⚡
-        stalled = next(line for line in text.splitlines() if line.startswith("💀"))
+        stalled = next(line for line in text.splitlines() if line.startswith("🔴"))
         self.assertNotIn("⚡", stalled)
         self.assertIn("stalled", stalled)
 
@@ -604,7 +604,7 @@ class EmojiFormatTests(unittest.TestCase):
         report = self._report()
         report["configured_in"] = {"minimaxai/minimax-m3.1-flash": ["shortlist"]}
         star = next(line for line in render.render_cached(report).splitlines()
-                    if line.startswith("★ "))
+                    if line.startswith("⭐"))
         self.assertIn("recommended", star)
         self.assertNotIn("shortlist", star)   # one row, one claim
 
@@ -615,7 +615,7 @@ class EmojiFormatTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
             i18n.reset_cache()
             star = next(line for line in render.render_cached(report).splitlines()
-                        if line.startswith("★ "))
+                        if line.startswith("⭐"))
         self.assertIn("recomendado", star)
 
     def test_title_is_bold_and_has_no_glyph(self):
@@ -657,12 +657,12 @@ class CapabilityTests(unittest.TestCase):
                                "nvidia/nemotron-parse": "not_provisioned"},
                               catalog=ids, survey=survey)
         text = render.render_board(report)
-        self.assertIn("🆗 1 chat · 1 utility online · 💀 2 offline", text)
+        self.assertIn("🟢 1 chat · 🛠 1 · 🔴 2 offline", text)
         self.assertIn("chat — usable now", text)
         self.assertIn("minimax-m3.1-flash", text)
-        self.assertIn("utility (not for chat)", text)
+        self.assertIn("🛠 utility", text)
         self.assertIn("llama-guard-4-12b", text)
-        self.assertIn("offline — 2", text)
+        self.assertIn("🔴 2 offline", text)
         self.assertIn("2 not provisioned", text)
 
     def test_the_board_survives_a_report_with_no_survey(self):
@@ -1022,8 +1022,8 @@ def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
 class RenderTests(unittest.TestCase):
     def test_cached_names_models_and_age(self):
         text = render.render_cached(_fake_report({"a": "ok", "b": "stall"}))
-        self.assertIn("★ a — ⚡0.5s", text)
-        self.assertIn("💀 b — stalled", text)
+        self.assertIn("⭐️ a — ⚡0.5s", text)
+        self.assertIn("🔴 b — stalled", text)
         self.assertIn("2 models", text)
 
     def test_a_stale_scan_says_so_in_the_header(self):
@@ -1197,7 +1197,7 @@ class ScanTests(unittest.TestCase):
         self.assertNotIn("cloud/one", cached)               # strangers stay out of the chat view
         self.assertIn(" nvidia/a", cached.replace("—", " "))
         board = render.render_catalog(report)
-        self.assertIn("🆗 4 answering", board)               # but the board shows all four
+        self.assertIn("✔️ 4 answering", board)               # but the board shows all four
 
     def test_a_chat_scan_does_not_erase_the_board(self):
         """The bug behind "it still says five models": /nim used to overwrite the survey's 85 verdicts."""

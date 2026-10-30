@@ -33,5 +33,5 @@ def stamp() -> str:
 
 
 def in_gateway_hint() -> str:
-    return ("the build this process imported — `hermes nim version` in a fresh shell always "
-            "reads the disk copy, so if that number is higher the running process is stale")
+    """One short clause: a version line is a fact, not an essay."""
+    return "running process"

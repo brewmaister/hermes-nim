@@ -143,6 +143,7 @@ board:
   offline_header: "caídos — {count}"
   offline_group: "  · {count} {why}"
   yours: "tuyo"
+  watching: "vigilado"
   hints: "/nim probe (solo tus modelos, rápido) · /nim catalog (detalle de caídos) · /nim json (todo)"
 
 progress:

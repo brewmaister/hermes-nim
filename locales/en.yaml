@@ -144,6 +144,7 @@ board:
   offline_header: "offline — {count}"
   offline_group: "  · {count} {why}"
   yours: "yours"
+  watching: "watching"
   hints: "/nim probe (your models only, fast) · /nim catalog (offline detail) · /nim json (all of it)"
 
 progress:

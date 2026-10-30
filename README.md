@@ -337,9 +337,9 @@ so the board is never older than your cron.
 
 Three rules keep that from becoming noise:
 
-- **Chat views stay on your models.** A survey stores 85 verdicts; `/nim` shows the 5 you configured.
-  A verdict on a model you never pointed at is not your uptime, and a recommendation drawn from
-  strangers is advice to change providers.
+- **`/nim` is the survey.** Every tap measures all 85 (17 s) and prints the whole board: chat models
+  ranked, utility models by name, offline by reason. `/nim probe` is the fast door for the models your
+  config uses; `/nim cached` reprints the last survey without touching the wire.
 - **Only models you point at may alert.** Confirming that `yi-large` is still 404, every six hours,
   forever, is not monitoring.
 - **The board is a survey, not a verdict for use.** One attempt, ten-second cap: enough to say

@@ -404,6 +404,11 @@ def render_board(report: dict, limit: int = 14) -> str:
                if verdict.get("status") != "ok"]
 
     mine = report.get("configured_in") or {}
+    # "yours" means config.yaml routes to it. A shortlist entry is watched, not used — saying both
+    # were yours made an 11-model scan look like an 11-model config.
+    routed = {model for model, where in mine.items()
+              if any(path != "shortlist" for path in where)}
+    watched_only = set(mine) - routed
     pick = engine.recommended(watched(report))
     pick_model = pick.get("model") if pick else None
 
@@ -421,8 +426,10 @@ def render_board(report: dict, limit: int = 14) -> str:
             if published is not None:
                 bits.insert(0, f"{QUALITY_MARK}{published.index:g}"
                                + (f" {t('quality.family')}" if published.inherited else ""))
-            if model in mine:
+            if model in routed:
                 bits.append(t("board.yours"))
+            elif model in watched_only:
+                bits.append(t("board.watching"))
             mark = "★" if model == pick_model else "✓"
             lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
         if len(chat) > limit:

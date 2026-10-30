@@ -569,9 +569,11 @@ class EmojiFormatTests(unittest.TestCase):
         report = _fake_report({"a/one": "ok", "a/two": "stall"}, catalog=("a/one", "a/two"),
                               survey=survey)
         text = render.render_cached(report)
-        self.assertIn("2 models you use", text)
+        # one line, three facts: how many you point at, how many of those the scan measured, and how
+        # many of everything listed answers — so "2 models" cannot be read as "only 2 exist"
+        self.assertIn("your 2 models", text)
+        self.assertIn("1/2 listed answer", text)
         self.assertIn("board: 1 of 2 measured models answer", text)
-        self.assertIn("2 listed", text)
 
     def test_an_unsurveyed_catalog_does_not_pretend_to_a_verdict(self):
         report = _fake_report({"a/one": "ok"}, catalog=("a/one", "other/x", "other/y"))

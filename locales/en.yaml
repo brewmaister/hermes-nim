@@ -7,9 +7,10 @@
 # language (a test enforces it), and a missing key falls back to English rather than to its name.
 
 header:
-  cached: "**NVIDIA NIM** · {age} · {models} models you use"
+  cached: "**NVIDIA NIM** · {age} · your {models} models{board}"
+  board: " · {online}/{listed} listed answer"
   known: "**NVIDIA NIM** — {models} models known"
-  probe: "**NVIDIA NIM scan** · just now · {models} models · {attempts}× each"
+  probe: "**NVIDIA NIM scan** · just now · your {models} models · {attempts}× each{board}"
   aborted: "**NVIDIA NIM scan** — aborted"
   stale_badge: " · ⏳ stale"
 

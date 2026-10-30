@@ -7,9 +7,10 @@
 # Los glifos (🧠 ⚡ ★ ✓ ⚠ ✗) no se traducen: son etiquetas. `{placeholders}` tampoco.
 
 header:
-  cached: "**NVIDIA NIM** · {age} · {models} modelos en uso"
+  cached: "**NVIDIA NIM** · {age} · tus {models} modelos{board}"
+  board: " · {online}/{listed} listados responden"
   known: "**NVIDIA NIM** — {models} modelos conocidos"
-  probe: "**NVIDIA NIM escaneo** · ahora mismo · {models} modelos · {attempts}× cada uno"
+  probe: "**NVIDIA NIM escaneo** · ahora mismo · tus {models} modelos · {attempts}× cada uno{board}"
   aborted: "**NVIDIA NIM escaneo** — abortado"
   stale_badge: " · ⏳ viejo"
 

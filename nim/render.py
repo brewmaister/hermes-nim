@@ -44,6 +44,18 @@ def plain(text: str) -> str:
     return re.sub(r"\*\*(.+?)\*\*", r"\1", text or "")
 
 
+def board_badge(report: dict) -> str:
+    """A compact "/13 of 85 answer" next to the model count, so one line explains the other two.
+
+    Without it the header says "5 models" and the footer says "85 listed", and the reader has to
+    remember which measurement is which. The badge makes the header self-contained.
+    """
+    survey = report.get("survey") or {}
+    if not survey or not survey.get("listed"):
+        return ""
+    return t("header.board", online=survey.get("online") or 0, listed=survey.get("listed"))
+
+
 def human_age(seconds: float | None) -> str:
     if seconds is None:
         return t("age.unknown")
@@ -315,7 +327,8 @@ def render_probe(report: dict) -> str:
     if banner:
         return "\n".join([t("header.aborted"), ""] + banner)
     models = report.get("models") or {}
-    header = t("header.probe", models=len(models), attempts=report.get("attempts"))
+    header = t("header.probe", models=len(models), attempts=report.get("attempts"),
+               board=board_badge(report))
     lines = [header, ""] + model_lines(report) + changes_block(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
     return "\n".join(lines)
@@ -354,7 +367,8 @@ def render_cached(report: dict) -> str:
     age = engine.scan_age_seconds(report)
     models = report.get("models") or {}
     stale = age is None or age >= STALE_AFTER_S
-    header = t("header.cached", age=human_age(age), models=len(models))
+    header = t("header.cached", age=human_age(age), models=len(models),
+               board=board_badge(report))
     if stale:
         header += t("header.stale_badge")
     lines = [header, ""]

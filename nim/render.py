@@ -169,15 +169,15 @@ def credential_block(report: dict) -> list[str]:
 def render_speed(report: dict) -> str:
     """Latency, measured now: to first byte and to the end of the answer, median of the attempts."""
     if report.get("error"):
-        return f"⚡ NIM speed — {report['error']}"
+        return f"⚡ NVIDIA NIM speed — {report['error']}"
     banner = credential_block(report)
     if banner:
-        return "\n".join(["⚡ NIM speed — cannot measure"] + [""] + banner)
+        return "\n".join(["⚡ NVIDIA NIM speed — cannot measure"] + [""] + banner)
     models = list((report.get("models") or {}).values())
     answered = [m for m in models if m.get("ttft_median_s") is not None]
     silent = [m for m in models if m.get("ttft_median_s") is None]
     answered.sort(key=lambda m: (m.get("ttft_median_s") or 9e9, m.get("total_s") or 9e9))
-    lines = [f"⚡ NIM speed · just now · {report.get('attempts')}× each · "
+    lines = [f"⚡ NVIDIA NIM speed · just now · {report.get('attempts')}× each · "
              f"median time to first byte"]
     lines.append("")
     if not answered:
@@ -214,12 +214,12 @@ def changes_block(report: dict) -> list[str]:
 
 def render_probe(report: dict) -> str:
     if report.get("error"):
-        return f"🧠 NIM — {report['error']}"
+        return f"🧠 NVIDIA NIM — {report['error']}"
     banner = credential_block(report)
     if banner:
-        return "\n".join([f"🧠 NIM scan — aborted", ""] + banner)
+        return "\n".join([f"🧠 NVIDIA NIM scan — aborted", ""] + banner)
     models = report.get("models") or {}
-    header = (f"🧠 NIM scan · just now · {len(models)} models · "
+    header = (f"🧠 NVIDIA NIM scan · just now · {len(models)} models · "
               f"{report.get('attempts')}× each")
     lines = [header, ""] + model_lines(report) + changes_block(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
@@ -239,20 +239,20 @@ def _catalog_footnote(report: dict) -> str:
 
 def render_cached(report: dict) -> str:
     if not report:
-        return ("🧠 NIM — no scan yet.\n\n"
+        return ("🧠 NVIDIA NIM — no scan yet.\n\n"
                 "/nim probe scans the models your config uses (~30 s).\n"
                 "/nim cfg shows what those are without touching the network.")
     if report.get("error"):
-        return f"🧠 NIM — {report['error']}"
+        return f"🧠 NVIDIA NIM — {report['error']}"
     banner = credential_block(report)
     if banner:
-        lines = [f"🧠 NIM — {len(report.get('models') or {})} models known", ""] + banner + [""]
+        lines = [f"🧠 NVIDIA NIM — {len(report.get('models') or {})} models known", ""] + banner + [""]
         lines += model_lines(report)
         lines += ["", _catalog_footnote(report)]
         return "\n".join(lines)
     age = engine.scan_age_seconds(report)
     models = report.get("models") or {}
-    lines = [f"🧠 NIM · {human_age(age)} · {len(models)} models", ""]
+    lines = [f"🧠 NVIDIA NIM · {human_age(age)} · {len(models)} models", ""]
     lines += model_lines(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
     lines += ["", "/nim probe · /nim speed · /nim dead · /nim catalog"]
@@ -261,16 +261,16 @@ def render_cached(report: dict) -> str:
 
 def render_catalog(report: dict) -> str:
     if not report:
-        return "🧠 NIM — no scan yet; run /nim probe first (the catalog is read during a scan)."
+        return "🧠 NVIDIA NIM — no scan yet; run /nim probe first (the catalog is read during a scan)."
     live = report.get("catalog") or []
     if not report.get("catalog_fetch_ok", True):
         live = report.get("catalog") or []
         if not live:
-            return "🧠 NIM — /v1/models did not answer on the last scan."
+            return "🧠 NVIDIA NIM — /v1/models did not answer on the last scan."
     dead = engine.removed_ids(report)
     usable = [model for model in live
               if (report.get("models") or {}).get(model, {}).get("status") == "ok"]
-    lines = [f"🧠 NIM catalog — {len(live)} models listed"]
+    lines = [f"🧠 NVIDIA NIM catalog — {len(live)} models listed"]
     if dead:
         lines.append(f"· {len(dead)} dropped since the last scan: {', '.join(dead[:5])}"
                      + ("…" if len(dead) > 5 else ""))
@@ -286,12 +286,12 @@ def render_catalog(report: dict) -> str:
 
 def render_dead(report: dict) -> str:
     if not report:
-        return "🧠 NIM — no scan yet; run /nim probe."
+        return "🧠 NVIDIA NIM — no scan yet; run /nim probe."
     _, _, dead = _grouped(report)
     removed = engine.removed_ids(report)
     lines = []
     if dead:
-        lines.append(f"🧠 NIM — {len(dead)} not usable")
+        lines.append(f"🧠 NVIDIA NIM — {len(dead)} not usable")
         used = report.get("configured_in") or {}
         lines += [f"• {result['model']} — {engine.label(result)}"
                   f"{' · ' + short_where((used or {}).get(result['model']) or []) if short_where((used or {}).get(result['model']) or []) else ''}"
@@ -300,22 +300,22 @@ def render_dead(report: dict) -> str:
         lines += ["", f"dropped from /v1/models ({len(removed)}): "
                       + ", ".join(removed[:8]) + ("…" if len(removed) > 8 else "")]
     if not lines:
-        return "🧠 NIM — nothing is currently dead in the last scan."
+        return "🧠 NVIDIA NIM — nothing is currently dead in the last scan."
     return "\n".join(lines)
 
 
 def render_added(report: dict, days: float = 7.0) -> str:
     if not report:
-        return "🧠 NIM — no scan yet; run /nim probe."
+        return "🧠 NVIDIA NIM — no scan yet; run /nim probe."
     added = engine.added_ids(report, days)
     if not added:
         seeded = report.get("catalog_seen") or {}
         since = min((str(r.get("first_seen")) for r in seeded.values() if r.get("first_seen")),
                     default="")
         hint = f" (tracking since {since[:10]})" if since else ""
-        return f"🧠 NIM — no new models in the last {days:g} days{hint}."
+        return f"🧠 NVIDIA NIM — no new models in the last {days:g} days{hint}."
     probed = report.get("new_models_probed") or {}
-    lines = [f"🧠 NIM — {len(added)} model(s) first seen in the last {days:g} days"]
+    lines = [f"🧠 NVIDIA NIM — {len(added)} model(s) first seen in the last {days:g} days"]
     for model in added:
         verdict = probed.get(model)
         detail = f" — {verdict['status']}" if verdict else ""
@@ -327,9 +327,9 @@ def render_added(report: dict, days: float = 7.0) -> str:
 
 def render_cfg(used: dict[str, list[str]], config_path: str) -> str:
     if not used:
-        return ("🧠 NIM — no `provider: nvidia` models in config.yaml.\n"
+        return ("🧠 NVIDIA NIM — no `provider: nvidia` models in config.yaml.\n"
                 "Nothing to watch; add one, or use /nim probe to check the shortlist only.")
-    lines = [f"🧠 NIM — {len(used)} NIM model(s) in config.yaml"]
+    lines = [f"🧠 NVIDIA NIM — {len(used)} NIM model(s) in config.yaml"]
     for model, where in used.items():
         lines.append(f"• {model} — {short_where(where) or ', '.join(where)}")
     lines += ["", config_path]

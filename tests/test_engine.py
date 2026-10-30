@@ -401,6 +401,33 @@ class CredentialTests(unittest.TestCase):
         self.assertIn("cannot measure", render.render_speed(report))
 
 
+class BrandTests(unittest.TestCase):
+    """Every view names the provider. 'NIM' alone is a crate, a compiler, and a dozen other things."""
+
+    def test_every_view_opens_with_the_brand(self):
+        report = _fake_report({"nvidia/nemotron-3-ultra-550b-a55b": "ok", "a/x": "stall"})
+        report["catalog"] = ["a/x"]
+        report["catalog_seen"] = {"a/x": {"first_seen": "2026-10-30T00:00:00+00:00"}}
+        report["configured_in"] = {"nvidia/nemotron-3-ultra-550b-a55b": ["fallback_providers[0]"]}
+        views = {
+            "cached": render.render_cached(report),
+            "probe": render.render_probe(report),
+            "speed": render.render_speed(report),
+            "catalog": render.render_catalog(report),
+            "dead": render.render_dead(report),
+            "added": render.render_added(report),
+            "cfg": render.render_cfg({"a/x": ["fallback_providers[0]"]}, "~/.hermes/config.yaml"),
+        }
+        for name, text in views.items():
+            first = text.splitlines()[0]
+            self.assertIn("NVIDIA NIM", first, f"{name} view lost the brand: {first!r}")
+
+    def test_empty_state_and_error_paths_keep_it_too(self):
+        self.assertIn("NVIDIA NIM", render.render_cached({}))
+        self.assertIn("NVIDIA NIM", render.render_cached({"error": "no key"}))
+        self.assertIn("NVIDIA NIM", render.render_speed({"error": "no key"}))
+
+
 class CatalogTests(unittest.TestCase):
     def test_fetch_failure_returns_empty(self):
         with mock.patch.object(engine, "_urlopen", side_effect=socket.timeout("no")):

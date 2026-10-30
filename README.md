@@ -5,7 +5,7 @@ models still answer.
 
 ```
 /nim
-🧠 NIM · 14 min ago · 7 models
+🧠 NVIDIA NIM · 14 min ago · 7 models
 
 ★ minimax-m3.1-flash — AA 29 · 0.41s · shortlist
 ✓ nemotron-3-ultra-550b-a55b — AA 23 · 0.55s · fallback 2, moa

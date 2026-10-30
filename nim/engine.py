@@ -99,6 +99,49 @@ def _urlopen(req: urllib.request.Request, timeout: float):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
+def median(values: list[float] | None) -> float | None:
+    """Median of the measurements, or None when nothing was measured.
+
+    Median rather than mean on purpose: one 20 s stall in three attempts is a real event, but it is
+    not the model's typical speed, and a mean would report it as if it were.
+    """
+    clean = sorted(float(value) for value in (values or []) if value is not None)
+    if not clean:
+        return None
+    middle = len(clean) // 2
+    if len(clean) % 2:
+        return round(clean[middle], 2)
+    return round((clean[middle - 1] + clean[middle]) / 2, 2)
+
+
+def key_status(base: str, key: str) -> dict:
+    """Ask ``/v1/models`` whether the credential is accepted — one GET before touching a model.
+
+    A revoked key otherwise looks *exactly* like 85 dead models: every probe returns 401, the history
+    records them all as dead, and the next healthy scan "recovers" every one of them. One cheap
+    request separates "the key is wrong" from "the models are gone", which are very different things
+    to tell a person at 2 a.m.
+    """
+    req = urllib.request.Request(
+        f"{base.rstrip('/')}/models", headers={"Authorization": f"Bearer {key}"})
+    try:
+        with _urlopen(req, 20) as response:
+            json.load(response)
+        return {"ok": True}
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read().decode(errors="replace"))
+        except Exception:  # noqa: BLE001
+            payload = {}
+        detail = str(payload.get("detail") or payload.get("title") or exc.reason or "")[:300]
+        if exc.code in (401, 403):
+            return {"ok": False, "code": exc.code, "detail": detail}
+        # Any other status is not a credential verdict: let the per-model probes speak.
+        return {"ok": True, "note": f"/v1/models answered HTTP {exc.code}"}
+    except Exception as exc:  # noqa: BLE001 - network down is not "key revoked"
+        return {"ok": True, "note": f"/v1/models unreachable ({type(exc).__name__})"}
+
+
 def attempt(base: str, model: str, key: str, ttft: float) -> dict:
     """One streaming call. Returns {kind, seconds, detail[, eol_at]}.
 
@@ -124,9 +167,19 @@ def attempt(base: str, model: str, key: str, ttft: float) -> dict:
     started = time.time()
     try:
         with _urlopen(req, ttft) as response:
+            first_byte: float | None = None
             for raw in response:
                 if raw.strip():
-                    return {"kind": "ok", "seconds": round(time.time() - started, 2), "detail": ""}
+                    if first_byte is None:
+                        first_byte = time.time() - started
+                    if b"[DONE]" in raw:
+                        break
+            if first_byte is not None:
+                # Two different numbers matter: how long before it starts talking (the thing that
+                # makes a model feel fast) and how long the whole 32-token answer took. Both are
+                # rounded here so a report never implies more precision than a LAN round trip.
+                return {"kind": "ok", "seconds": round(first_byte, 2),
+                        "total": round(time.time() - started, 2), "detail": ""}
         return {"kind": "stall", "seconds": round(time.time() - started, 2),
                 "detail": "empty stream"}
     except urllib.error.HTTPError as exc:
@@ -142,7 +195,8 @@ def attempt(base: str, model: str, key: str, ttft: float) -> dict:
             401: "auth_error",
             403: "auth_error",
         }.get(exc.code, f"http_{exc.code}")
-        result = {"kind": kind, "seconds": round(time.time() - started, 2), "detail": detail}
+        result = {"kind": kind, "code": exc.code,
+                  "seconds": round(time.time() - started, 2), "detail": detail}
         if kind == "eol":
             found = re.search(r"end of life on ([0-9T:\-]+Z)", detail)
             if found:
@@ -183,6 +237,8 @@ def probe(base: str, model: str, key: str, ttft: float = 25.0, attempts: int = 2
         "ok_attempts": len(okays),
         "attempts": len(trials),
         "ttft_s": min((trial["seconds"] for trial in okays), default=None),
+        "ttft_median_s": median([trial["seconds"] for trial in okays]),
+        "total_s": median([trial.get("total") for trial in okays if trial.get("total") is not None]),
         "detail": next((trial["detail"] for trial in trials if trial["detail"]), ""),
         "trials": [f"{trial['kind']}:{trial['seconds']}" for trial in trials],
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -461,6 +517,10 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
     if not resolved_key:
         return {"error": key_hint(), "models": {}, "changes": [], "catalog": []}
 
+    credential = key_status(base, resolved_key)
+    if not credential["ok"]:
+        return _credential_report(base, credential, configured_dir)
+
     used = configured_models(config_path)
     targets = list(used)
     for model in extra or []:
@@ -475,6 +535,12 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(
             lambda model: probe(base, model, resolved_key, ttft, attempts, stagger), targets))
+    rejected = credential_failure(results)
+    if rejected is not None:
+        # Nothing below this line may run: writing "dead" for every model would be a lie about the
+        # models and would produce a fake RECOV storm once the key is fixed.
+        return _credential_report(base, rejected, configured_dir)
+
     live_catalog = catalog(base, resolved_key)
     catalog_ok = bool(live_catalog)
 
@@ -554,6 +620,70 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
     return report
 
 
+CREDENTIAL_REALERT_HOURS = 24
+
+
+def credential_failure(results: list[dict]) -> dict | None:
+    """A credential verdict, but only when *every* model was rejected by the same response.
+
+    `/v1/models` cannot be trusted to detect this: NVIDIA serves that catalog to any key, so a
+    revoked key still lists 85 models and every /chat/completions call comes back 401. The reliable
+    signal is unanimity across the model probes — one model refusing could be its own 403, all of
+    them refusing the same way is the credential.
+    """
+    if not results:
+        return None
+    if not all(str(result.get("status")) == "auth_error" for result in results):
+        return None
+    first = results[0]
+    return {"ok": False, "code": first.get("code") or 401,
+            "detail": first.get("detail") or f"every model rejected the credential "
+                                             f"({len(results)} of {len(results)})"}
+
+
+def _credential_report(base: str, credential: dict, configured_dir: str = "") -> dict:
+    """The report for "the key is wrong": keep the last good verdicts, never touch them.
+
+    Nothing here is a statement about a model, so nothing here may be written into the model history
+    — otherwise fixing the key would produce a RECOV line per model and a wall of fake news. The
+    condition is announced when it appears and then at most once a day while it persists; silence
+    in between is deliberate.
+    """
+    previous = load_state(configured_dir)
+    before = previous.get("credential_failure") or {}
+    now = datetime.now(timezone.utc)
+    last_alert = before.get("alerted_at")
+    quiet = False
+    if before and last_alert:
+        try:
+            age_hours = (now - datetime.fromisoformat(str(last_alert).replace("Z", "+00:00"))).total_seconds() / 3600
+            quiet = age_hours < CREDENTIAL_REALERT_HOURS
+        except Exception:  # noqa: BLE001
+            quiet = False
+
+    report = dict(previous)
+    report.update({
+        "version": STATE_VERSION,
+        "run_at": _now_iso(),
+        "base": base,
+        "credential_failure": {
+            "code": credential.get("code"),
+            "detail": credential.get("detail", ""),
+            "at": _now_iso(),
+            "alerted_at": before.get("alerted_at") if quiet else _now_iso(),
+        },
+        "last_good_run_at": previous.get("last_good_run_at") or previous.get("run_at"),
+        "catalog_fetch_ok": False,
+        "changes": [] if quiet else [
+            f"KEY REJECTED  HTTP {credential.get('code')}: {credential.get('detail') or 'no detail'}"
+            " — models were NOT probed; fix NVIDIA_API_KEY in ~/.hermes/.env"
+        ],
+    })
+    report.setdefault("models", {})
+    save_state(report, configured_dir)
+    return report
+
+
 def scan_age_seconds(report: dict) -> float | None:
     try:
         when = datetime.fromisoformat(str(report.get("run_at")).replace("Z", "+00:00"))
@@ -563,9 +693,10 @@ def scan_age_seconds(report: dict) -> float | None:
 
 
 __all__ = [
-    "params_from_id", "rank_key", "reliability",
+    "params_from_id", "rank_key", "reliability", "median", "key_status",
     "DEFAULT_BASE", "STATE_VERSION", "api_key", "key_hint", "attempt", "probe", "catalog",
     "configured_models", "severity", "label", "load_state", "save_state", "scan",
+    "credential_failure",
     "scan_age_seconds", "merge_seen", "removed_ids", "added_ids", "state_dir", "state_path",
     "hermes_home",
 ]

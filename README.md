@@ -77,6 +77,7 @@ happened can never read as success.
 |---|---|---|
 | `/nim` | cached scan (the last one, with its age) | instant |
 | `/nim probe` | live scan: config models + shortlist | ~30–60 s |
+| `/nim speed [n]` | timed scan: first byte + full answer, median of n attempts (default 3) | ~15–40 s |
 | `/nim catalog` | what `/v1/models` lists, what dropped out | instant |
 | `/nim dead` | everything currently unusable | instant |
 | `/nim added [days]` | models first seen recently (default 7) | instant |
@@ -108,6 +109,45 @@ not a tie-break. Exactly one model carries the tag, or none does.
 
 That distinction is the point of the two: ranking answers "what is strongest", the tag answers "what
 should I use right now". They disagree whenever the strongest model is slow.
+
+## When the key is the problem
+
+A revoked `NVIDIA_API_KEY` looks *exactly* like a wiped model platform: every probe returns 401. So
+`/nim` refuses to write that into the model history. When every probed model is rejected by the same
+response, the scan stops and reports the credential instead:
+
+```
+🧠 NIM — 7 models known
+
+🔑 NVIDIA key rejected — HTTP 401: Authorization failed
+   Models were NOT probed: this is the credential, not the models.
+   Fix NVIDIA_API_KEY in ~/.hermes/.env, then /nim probe.
+   Below is the last good scan (18 min ago), unchanged.
+```
+
+The previous verdicts stay untouched, so fixing the key does not produce a fake "RECOV" for every
+model. The condition is announced when it appears and then at most once every 24 h while it lasts.
+`/nim speed` answers `cannot measure` rather than timing a wall.
+
+Detection is unanimity across the model probes, not `/v1/models`: NVIDIA serves that catalog to any
+key, so a revoked key still lists 85 models and only `/chat/completions` says 401.
+
+## Timing models: /nim speed
+
+`/nim speed [n]` (default 3 attempts) reports two different numbers per model, both medians:
+
+- **first byte** — how long before it starts talking; this is what makes a model feel fast
+- **to finish** — the whole 32-token answer, which tracks tokens/s
+
+```
+1. nvidia/nemotron-3.5-lightning-30b-a3b — 0.28s (0.28 / 1.04 / 0.28) · 1.34s to finish
+2. openai/gpt-oss-20b — 0.42s (0.49 / 0.29 / 0.42) · 1.04s to finish
+7. stepfun-ai/step-5-preview — 16.22s (16.22 / 0.39 / 22.16) · 16.87s to finish
+```
+
+Median, not mean, on purpose: one 20 s stall is a real event but it is not the model's speed, and a
+mean would report it as though it were. Models that never emitted a byte are listed separately, not
+quietly dropped.
 
 ## How a verdict is reached
 

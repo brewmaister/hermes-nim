@@ -18,6 +18,7 @@ USAGE = (
     "/nim catalog — what /v1/models lists, and what dropped out of it\n"
     "/nim dead — everything currently unusable\n"
     "/nim added [days] — models that appeared recently (default 7)\n"
+    "/nim speed [n] — timed scan: first byte and full answer, median of n attempts (default 3)\n"
     "/nim cfg — which NIM models config.yaml references, no network\n"
     "/nim json — the last scan as JSON\n"
     "/nim version · /nim help"
@@ -52,6 +53,19 @@ def do_scan() -> dict:
     )
 
 
+def do_speed_scan(attempts: int) -> dict:
+    """A timed scan: more attempts than a health check, because one sample is not a speed."""
+    current = settings.settings()
+    return engine.scan(
+        base=current.api_base,
+        ttft=current.ttft_seconds,
+        attempts=max(1, min(6, attempts)),
+        stagger=current.stagger_seconds,
+        extra=current.shortlist_models(),
+        configured_dir=current.state_dir,
+    )
+
+
 def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> tuple[str, int]:
     """Return (text, exit_code). Exit: 0 healthy · 1 something unusable · 2 could not scan."""
     current = settings.settings()
@@ -67,6 +81,13 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
         if not report:
             return ("🧠 NIM — no scan yet; run /nim probe first."), 2
         return jsonlib.dumps(report, indent=1), 0
+
+    if verb == "speed":
+        attempts = int(_days(extra_args, 3))
+        report = do_speed_scan(attempts)
+        if report.get("error"):
+            return f"⚡ NIM speed — {report['error']}", 2
+        return render.render_speed(report), 0
 
     report = None
     if force_scan or verb == "probe":
@@ -110,12 +131,12 @@ def setup_argparse(parser: argparse.ArgumentParser) -> None:
         "verb",
         nargs="?",
         default="cached",
-        choices=["cached", "status", "probe", "catalog", "dead", "added", "cfg", "json",
+        choices=["cached", "status", "probe", "speed", "catalog", "dead", "added", "cfg", "json",
                  "watch", "version", "help"],
         help="What to print (default: cached — the last scan, no network)",
     )
     parser.add_argument("days", nargs="?", default=None,
-                        help="For `added`: how many days back to look (default 7)")
+                        help="For `added`: how many days back; for `speed`: how many attempts")
     parser.add_argument("--json", action="store_true", help="Print the report as JSON")
     parser.add_argument("--ttft", type=float, default=None,
                         help="Override seconds-to-first-byte before a model counts as stalled")

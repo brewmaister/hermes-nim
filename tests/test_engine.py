@@ -267,6 +267,131 @@ class BenchmarkPriorTests(unittest.TestCase):
         self.assertIn("nothing", render.best_line(report))
 
 
+class MedianTests(unittest.TestCase):
+    def test_median_odd_even_and_empty(self):
+        self.assertEqual(engine.median([0.5, 0.1, 0.3]), 0.3)
+        self.assertEqual(engine.median([0.4, 0.2]), 0.3)
+        self.assertIsNone(engine.median([]))
+        self.assertIsNone(engine.median(None))
+        self.assertEqual(engine.median([1.0, None, 3.0]), 2.0)
+
+    def test_one_stall_does_not_become_the_speed(self):
+        # two fast answers and a 20 s stall: the median must report the fast ones
+        self.assertEqual(engine.median([0.3, 0.3, 20.0]), 0.3)
+
+
+class SpeedTests(unittest.TestCase):
+    def _report(self):
+        return {"attempts": 3, "models": {
+            "slow/model-30b": {"model": "slow/model-30b", "status": "ok", "ok_attempts": 3,
+                               "attempts": 3, "ttft_s": 2.0, "ttft_median_s": 2.0,
+                               "total_s": 2.6, "trials": ["ok:1.9", "ok:2.0", "ok:2.1"]},
+            "fast/model-30b": {"model": "fast/model-30b", "status": "ok", "ok_attempts": 2,
+                               "attempts": 3, "ttft_s": 0.2, "ttft_median_s": 0.25,
+                               "total_s": 0.9, "trials": ["ok:0.2", "ok:0.3", "stall:25.0"]},
+            "dead/model-30b": {"model": "dead/model-30b", "status": "stall", "ok_attempts": 0,
+                               "attempts": 3, "ttft_s": None, "ttft_median_s": None,
+                               "total_s": None, "trials": ["stall:25.0"]},
+        }}
+
+    def test_speed_is_ordered_fastest_first_with_both_timings(self):
+        text = render.render_speed(self._report())
+        fast = next(line for line in text.splitlines() if line.startswith("1. "))
+        self.assertIn("fast/model-30b", fast)
+        self.assertIn("0.25s", fast)
+        self.assertIn("0.9s to finish", fast)
+        self.assertIn("0.2 / 0.3", fast)
+        self.assertIn("only 2/3 answered", fast)
+
+    def test_unmeasured_models_are_listed_separately_not_silently_dropped(self):
+        text = render.render_speed(self._report())
+        self.assertIn("no measurement", text)
+        self.assertIn("dead/model-30b", text.split("no measurement")[1])
+
+    def test_speed_with_nothing_answering_says_so(self):
+        report = {"attempts": 3, "models": {"a/model-30b": {
+            "model": "a/model-30b", "status": "stall", "ok_attempts": 0, "attempts": 3,
+            "ttft_median_s": None, "trials": ["stall:25"]}}}
+        self.assertIn("nothing to time", render.render_speed(report))
+
+
+class CredentialTests(unittest.TestCase):
+    """A revoked key must never be reported as dead models — and never written into their history."""
+
+    def test_models_endpoint_401_is_a_credential_verdict(self):
+        err = http_error(401, {"title": "Authentication failed", "detail": "invalid api key"})
+        with mock.patch.object(engine, "_urlopen", side_effect=opener([err])):
+            status = engine.key_status("https://x/v1", "bad")
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["code"], 401)
+        self.assertIn("invalid api key", status["detail"])
+
+    def test_other_statuses_are_not_credential_verdicts(self):
+        err = http_error(500, {"detail": "boom"})
+        with mock.patch.object(engine, "_urlopen", side_effect=opener([err])):
+            self.assertTrue(engine.key_status("https://x/v1", "k")["ok"])
+
+    def test_network_down_is_not_a_revoked_key(self):
+        with mock.patch.object(engine, "_urlopen",
+                               side_effect=opener([socket.gaierror("no dns")])):
+            self.assertTrue(engine.key_status("https://x/v1", "k")["ok"])
+
+    def test_revoked_key_preserves_model_history_and_alerts_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            good = {"run_at": "2026-10-30T10:00:00+00:00", "models": {
+                "a/model-30b": {"model": "a/model-30b", "status": "ok", "ok_attempts": 2,
+                                "attempts": 2, "severity": "ok", "alerted": False}}}
+            engine.save_state(good, directory)
+
+            report = engine._credential_report(
+                "https://x/v1", {"ok": False, "code": 401, "detail": "invalid api key"}, directory)
+
+            self.assertTrue(report.get("credential_failure"))
+            self.assertEqual(report["last_good_run_at"], "2026-10-30T10:00:00+00:00")
+            # the model verdicts survive untouched — nothing here is a statement about a model
+            self.assertEqual(report["models"]["a/model-30b"]["severity"], "ok")
+            self.assertEqual(report["models"]["a/model-30b"]["status"], "ok")
+            self.assertEqual(len(report["changes"]), 1)
+            self.assertIn("KEY REJECTED", report["changes"][0])
+            self.assertIn("NOT probed", report["changes"][0])
+
+            # a second run inside the re-alert window stays quiet, and keeps models intact
+            again = engine._credential_report(
+                "https://x/v1", {"ok": False, "code": 401, "detail": "invalid api key"}, directory)
+            self.assertEqual(again["changes"], [])
+            self.assertEqual(again["models"]["a/model-30b"]["status"], "ok")
+
+    def test_unanimous_401_is_a_credential_verdict(self):
+        results = [{"status": "auth_error", "code": 401, "detail": "Authorization failed"},
+                   {"status": "auth_error", "code": 401, "detail": "Authorization failed"}]
+        verdict = engine.credential_failure(results)
+        self.assertIsNotNone(verdict)
+        self.assertEqual(verdict["code"], 401)
+
+    def test_one_rejecting_model_is_not_a_credential_verdict(self):
+        # a single 403 can be model-specific entitlement; only unanimity indicts the key
+        results = [{"status": "auth_error", "code": 403, "detail": "not entitled"},
+                   {"status": "ok", "code": None, "detail": ""}]
+        self.assertIsNone(engine.credential_failure(results))
+        self.assertIsNone(engine.credential_failure([]))
+
+    def test_banner_and_cached_view(self):
+        report = {"run_at": "2026-10-30T11:00:00+00:00",
+                  "last_good_run_at": "2026-10-30T10:00:00+00:00",
+                  "credential_failure": {"code": 401, "detail": "invalid api key"},
+                  "models": {"a/model-30b": {"model": "a/model-30b", "status": "ok",
+                                             "ok_attempts": 2, "attempts": 2, "ttft_s": 0.4}}}
+        text = render.render_cached(report)
+        self.assertIn("🔑 NVIDIA key rejected — HTTP 401", text)
+        self.assertIn("invalid api key", text)
+        self.assertIn("NVIDIA_API_KEY", text)
+        self.assertIn("last good scan", text)
+        # the models are still shown, and none of them is claimed to be dead
+        self.assertIn("a/model-30b", text)
+        self.assertNotIn("❌", text)
+        self.assertIn("cannot measure", render.render_speed(report))
+
+
 class CatalogTests(unittest.TestCase):
     def test_fetch_failure_returns_empty(self):
         with mock.patch.object(engine, "_urlopen", side_effect=socket.timeout("no")):

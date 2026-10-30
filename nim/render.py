@@ -123,6 +123,60 @@ def best_line(report: dict) -> str:
     return f"recommended: {model} — " + ", ".join(why)
 
 
+def credential_block(report: dict) -> list[str]:
+    """The key-rejected banner: one line about the credential, never 85 lines about models."""
+    failure = report.get("credential_failure")
+    if not failure:
+        return []
+    code = failure.get("code") or "?"
+    detail = str(failure.get("detail") or "").strip() or "no detail in the response"
+    lines = [f"🔑 NVIDIA key rejected — HTTP {code}: {detail}",
+             "   Models were NOT probed: this is the credential, not the models.",
+             "   Fix NVIDIA_API_KEY in ~/.hermes/.env, then /nim probe."]
+    age = engine.scan_age_seconds({"run_at": report.get("last_good_run_at")})
+    if report.get("models"):
+        lines.append(f"   Below is the last good scan ({human_age(age)}), unchanged.")
+    return lines
+
+
+def render_speed(report: dict) -> str:
+    """Latency, measured now: to first byte and to the end of the answer, median of the attempts."""
+    if report.get("error"):
+        return f"⚡ NIM speed — {report['error']}"
+    banner = credential_block(report)
+    if banner:
+        return "\n".join(["⚡ NIM speed — cannot measure"] + [""] + banner)
+    models = list((report.get("models") or {}).values())
+    answered = [m for m in models if m.get("ttft_median_s") is not None]
+    silent = [m for m in models if m.get("ttft_median_s") is None]
+    answered.sort(key=lambda m: (m.get("ttft_median_s") or 9e9, m.get("total_s") or 9e9))
+    lines = [f"⚡ NIM speed — {report.get('attempts')} attempt(s) each · "
+             f"just now · time to first byte, median"]
+    lines.append("")
+    if not answered:
+        lines.append("No model answered at all — nothing to time.")
+    for position, result in enumerate(answered, start=1):
+        model = str(result.get("model") or "")
+        trials = [trial.split(":")[1] for trial in (result.get("trials") or [])
+                  if trial.startswith("ok:")]
+        spread = " / ".join(trials[:4]) + ("…" if len(trials) > 4 else "")
+        total = result.get("total_s")
+        tail = f" · {total}s to finish" if total is not None else ""
+        flaky = ("" if result.get("ok_attempts") == result.get("attempts")
+                 else f" · only {result.get('ok_attempts')}/{result.get('attempts')} answered")
+        lines.append(f"{position}. {model} — {result.get('ttft_median_s')}s"
+                     f" ({spread}){tail}{flaky}")
+    if silent:
+        lines += ["", "no measurement (never emitted a byte): "
+                  + ", ".join(str(m.get("model")) for m in silent)]
+    fastest = answered[0] if answered else None
+    lines += ["", "first byte is what feels fast; 'to finish' is the whole 32-token answer, so it "
+                  "tracks tokens/s. Median, not mean: one stall is an event, not a speed."]
+    if fastest:
+        lines.append(f"fastest right now: {fastest.get('model')} — {fastest.get('ttft_median_s')}s")
+    return "\n".join(lines)
+
+
 def changes_block(report: dict) -> list[str]:
     changes = report.get("changes") or []
     if not changes:
@@ -133,6 +187,9 @@ def changes_block(report: dict) -> list[str]:
 def render_probe(report: dict) -> str:
     if report.get("error"):
         return f"🧠 NIM — {report['error']}"
+    banner = credential_block(report)
+    if banner:
+        return "\n".join([f"🧠 NIM scan — aborted", ""] + banner)
     models = report.get("models") or {}
     header = (f"🧠 NIM scan — {len(models)} models · "
               f"{report.get('attempts')} attempt(s) each · "
@@ -160,6 +217,12 @@ def render_cached(report: dict) -> str:
                 "/nim cfg shows what those are without touching the network.")
     if report.get("error"):
         return f"🧠 NIM — {report['error']}"
+    banner = credential_block(report)
+    if banner:
+        lines = [f"🧠 NIM — {len(report.get('models') or {})} models known", ""] + banner + [""]
+        lines += model_lines(report)
+        lines += ["", _catalog_footnote(report)]
+        return "\n".join(lines)
     age = engine.scan_age_seconds(report)
     models = report.get("models") or {}
     lines = [f"🧠 NIM — last scan {human_age(age)} · {len(models)} models", ""]

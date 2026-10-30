@@ -170,7 +170,9 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
 
 
 def _dead(report: dict) -> list[dict]:
-    return [result for result in (report.get("models") or {}).values()
+    """Dead models you point at. A stranger's 404 is not a broken config, so it is not exit code 1."""
+    watched = render.watched(report)
+    return [result for result in (watched.get("models") or {}).values()
             if engine.severity(result) == "dead"]
 
 

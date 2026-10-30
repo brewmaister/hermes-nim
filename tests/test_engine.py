@@ -1092,6 +1092,28 @@ class ScanTests(unittest.TestCase):
         board = render.render_catalog(report)
         self.assertIn("✓ 4 answering", board)               # but the board shows all four
 
+    def test_a_chat_scan_does_not_erase_the_board(self):
+        """The bug behind "it still says five models": /nim used to overwrite the survey's 85 verdicts."""
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+            return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
+                    "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        catalog = ["nvidia/a", "nvidia/b", "cloud/one", "cloud/two"]
+        with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                mock.patch.object(engine, "catalog", return_value=catalog):
+            engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
+                        configured_dir=self.state_dir, survey=True, survey_ttft=1)
+            after_survey = engine.load_state(self.state_dir)
+            engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
+                        configured_dir=self.state_dir)
+            after_chat = engine.load_state(self.state_dir)
+        self.assertEqual(len(after_survey["models"]), 4)
+        self.assertEqual(len(after_chat["models"]), 4)          # board intact
+        self.assertEqual(after_chat["survey"]["measured"], 4)   # survey info carried forward
+        self.assertEqual(len(render.render_catalog(after_chat).splitlines()), 
+                         len(render.render_catalog(after_survey).splitlines()))
+
     def test_a_survey_never_alerts_about_models_you_do_not_point_at(self):
         def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
             return {"model": model, "status": "http_404", "ok_attempts": 0, "attempts": attempts,

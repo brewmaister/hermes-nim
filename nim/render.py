@@ -388,6 +388,8 @@ def render_catalog(report: dict, limit: int = 12) -> str:
     if survey:
         header += " · " + t(
             "catalog.surveyed", age=human_age(engine.scan_age_seconds({"run_at": survey.get("at")})))
+    else:
+        header += " · " + t("catalog.never_surveyed")
     lines = [header]
     removed = engine.removed_ids(report)
     if removed:

@@ -99,6 +99,7 @@ catalog:
   dropped: "· {count} dados de baja desde el último escaneo: {models}"
   verified: "· verificados respondiendo: {models}"
   surveyed: "medido {age}"
+  never_surveyed: "sin medir (/nim survey)"
   online: "✓ {count} responden: {models}"
   offline: "✗ {count} sin servicio:"
   line: "  • {model} — {why}"

@@ -621,7 +621,13 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
             changes.append(f"NEW MODEL {model}: listed in /v1/models — "
                            f"{label(result) if result else 'not probed'}")
 
-    models_by_id = {result["model"]: result for result in results}
+    # Verdicts survive the door that did not measure them: a chat scan measures your models, and the
+    # board from the last survey must not disappear because you typed /nim. Without this the state
+    # shrank from 85 measured models to 5 on the next scan and the board silently lost its data.
+    fresh = {result["model"] for result in results}
+    models_by_id = {model: verdict for model, verdict in (previous.get("models") or {}).items()
+                    if model not in fresh and model not in used}
+    models_by_id.update({result["model"]: result for result in results})
     # Severity and the alerted flag must live beside the probe result: the next run reads them back
     # to decide whether a condition is confirmed, and therefore whether it is worth saying out loud.
     for model, info in history.items():

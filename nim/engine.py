@@ -298,20 +298,50 @@ def reliability(result: dict) -> float:
 
 
 def rank_key(result: dict) -> tuple:
-    """Best-first: known size (largest first), then reliability, then latency.
+    """Best-first, on evidence in descending order of trust.
 
-    Ordered this way so every position is explainable from facts on the line: the size is in the
-    model id, the ratio and the milliseconds were measured. Unknown sizes sort after known ones and
-    are labelled as unknown rather than being assigned a made-up number.
+    1. A published benchmark index (`nim.benchmarks`) — external evidence, labelled as such.
+    2. Otherwise the parameter count in the model id — a weak prior, better than nothing.
+    3. Then measured behaviour: attempts-answered ratio, then time to first byte.
+
+    Every position is explainable from something printed on the line. A model with neither an index
+    nor a stated size sorts last and is labelled, never given an invented number.
     """
-    size = params_from_id(str(result.get("model") or ""))
+    from . import benchmarks
+
+    model = str(result.get("model") or "")
+    index = benchmarks.quality(model)
+    size = params_from_id(model)
     latency = result.get("ttft_s")
     return (
-        0 if size is not None else 1,      # known sizes first
-        -(size or 0.0),                    # bigger = stronger prior
+        0 if index is not None else 1,     # published scores first
+        -(index or 0.0),
+        0 if size is not None else 1,      # then known sizes
+        -(size or 0.0),
         -reliability(result),              # then: answered every time
         latency if latency is not None else 9e9,
     )
+
+
+# A model that takes longer than this to emit a first byte is not what anyone wants recommended,
+# however strong it is on paper. Kept as a constant so the rule is visible and testable.
+RECOMMEND_MAX_TTFT_S = 5.0
+
+
+def recommended(report: dict) -> dict | None:
+    """The single model to use right now, or None when nothing qualifies.
+
+    Highest-ranked model that answered *every* attempt and is quick enough to be pleasant. Ranking
+    alone is not a recommendation: a 40 s first byte is unusable in a chat loop no matter how good
+    the benchmark is, so speed is a gate here rather than a tie-break.
+    """
+    for result in sorted((report.get("models") or {}).values(), key=rank_key):
+        if severity(result) != "ok":
+            continue
+        latency = result.get("ttft_s")
+        if latency is None or latency <= RECOMMEND_MAX_TTFT_S:
+            return result
+    return None
 
 
 # --------------------------------------------------------------------------- verdicts

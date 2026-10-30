@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from . import engine
+from . import benchmarks, engine
 
 MAX_LINES = 26  # keep a chat reply readable; the artifact files hold the full picture
 
@@ -61,21 +61,33 @@ def _size_tag(result: dict) -> str:
     return f"{size:g}B · " if size is not None else ""
 
 
-def _line(result: dict, used: dict[str, list[str]], mark: str, best: bool = False) -> str:
+def _quality_tag(result: dict) -> str:
+    """Published score when one exists, else the id's parameter count, else nothing."""
+    tag = benchmarks.describe(str(result.get("model") or ""))
+    if tag:
+        return f"{tag} · "
+    return _size_tag(result)
+
+
+def _line(result: dict, used: dict[str, list[str]], mark: str, recommended: bool = False) -> str:
     where = short_where((used or {}).get(result["model"]) or [])
     suffix = f" · {where}" if where else ""
-    tail = " ← best" if best else ""
-    return f"{mark} {result['model']} — {_size_tag(result)}{engine.label(result)}{suffix}{tail}"
+    tail = " (recommended)" if recommended else ""
+    return (f"{mark} {result['model']} — {_quality_tag(result)}"
+            f"{engine.label(result)}{suffix}{tail}")
 
 
 def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     used = report.get("configured_in") or {}
     alive, warn, dead = _grouped(report)
     lines: list[str] = []
-    # Best-first, and the ordering is all facts: parameter count from the model id (NVIDIA's own
-    # number), then how many attempts answered, then measured latency. Nothing invented.
-    for position, result in enumerate(sorted(alive, key=engine.rank_key)):
-        lines.append(_line(result, used, "✅", best=position == 0))
+    # Ranked best-first on evidence: published benchmark index, else the parameter count in the id,
+    # then attempts-answered, then measured latency. Exactly one model carries "(recommended)" —
+    # and it is not always the top of the list, because a 40 s first byte is not a recommendation.
+    pick = engine.recommended(report)
+    pick_model = pick.get("model") if pick else None
+    for result in sorted(alive, key=engine.rank_key):
+        lines.append(_line(result, used, "✅", recommended=result["model"] == pick_model))
     for result in warn:
         lines.append(_line(result, used, "⚠️"))
     for result in dead:
@@ -87,17 +99,28 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
 
 
 def best_line(report: dict) -> str:
-    """One line naming the top pick and exactly why it is on top."""
-    alive = [result for result in (report.get("models") or {}).values()
-             if engine.severity(result) == "ok"]
-    if not alive:
-        return "best right now: nothing — no model answered every attempt"
-    top = sorted(alive, key=engine.rank_key)[0]
-    size = engine.params_from_id(str(top.get("model") or ""))
-    why = [f"{top.get('ok_attempts')}/{top.get('attempts')} answered", f"{top.get('ttft_s')}s"]
-    if size is not None:
-        why.insert(0, f"{size:g}B")
-    return f"best right now: {top['model']} — " + ", ".join(why)
+    """One line naming the recommendation and the evidence behind it."""
+    pick = engine.recommended(report)
+    if pick is None:
+        alive = [result for result in (report.get("models") or {}).values()
+                 if engine.severity(result) == "ok"]
+        if not alive:
+            return "recommended: nothing — no model answered every attempt"
+        return (f"recommended: nothing under {engine.RECOMMEND_MAX_TTFT_S:g}s — "
+                f"the healthy models are all slower than that right now")
+    model = str(pick.get("model") or "")
+    published = benchmarks.lookup(model)
+    why: list[str] = []
+    if published is not None:
+        why.append(f"AA {published.index:g}")
+        if published.context:
+            why.append(f"{published.context // 1000}k ctx")
+    else:
+        size = engine.params_from_id(model)
+        if size is not None:
+            why.append(f"{size:g}B")
+    why += [f"{pick.get('ok_attempts')}/{pick.get('attempts')} answered", f"{pick.get('ttft_s')}s"]
+    return f"recommended: {model} — " + ", ".join(why)
 
 
 def changes_block(report: dict) -> list[str]:

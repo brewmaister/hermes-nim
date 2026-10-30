@@ -170,7 +170,8 @@ class RankTests(unittest.TestCase):
         self.assertEqual(ordered[0]["model"], big["model"])
 
     def test_unknown_size_sorts_last_and_is_not_guessed(self):
-        unknown = self._result("minimaxai/minimax-m3.1-flash", ttft=0.1)
+        # neither a published score nor a size in the id: it must not be handed either
+        unknown = self._result("vendor/unnamed-model", ttft=0.1)
         small = self._result("openai/gpt-oss-20b", ttft=5.0)
         ordered = sorted([unknown, small], key=engine.rank_key)
         self.assertEqual(ordered[0]["model"], small["model"])
@@ -199,11 +200,67 @@ class RankTests(unittest.TestCase):
             report["models"][model]["ok_attempts"] = 2
             report["models"][model]["ttft_s"] = 0.5
         text = render.render_cached(report)
-        self.assertIn("550B", text)
-        self.assertIn("← best", text)
         first_model = next(line for line in text.splitlines() if line.startswith("✅"))
-        self.assertIn("nemotron-3-ultra-550b", first_model)
-        self.assertIn("best right now: nvidia/nemotron-3-ultra-550b-a55b", text)
+        # minimax carries a published AA index (29) and nemotron a lower one (23), so the published
+        # score outranks the bigger parameter count — this is the case the size prior got wrong.
+        self.assertIn("minimax-m3.1-flash", first_model)
+        self.assertIn("(recommended)", first_model)
+        self.assertIn("recommended: minimaxai/minimax-m3.1-flash", text)
+
+
+class BenchmarkPriorTests(unittest.TestCase):
+    def test_published_index_beats_a_bigger_parameter_count(self):
+        published = {"model": "minimaxai/minimax-m3.1-flash", "status": "ok", "ok_attempts": 2,
+                     "attempts": 2, "ttft_s": 4.0, "trials": []}
+        bigger = {"model": "nvidia/nemotron-3-ultra-550b-a55b", "status": "ok",
+                  "ok_attempts": 2, "attempts": 2, "ttft_s": 0.5, "trials": []}
+        ordered = sorted([bigger, published], key=engine.rank_key)
+        self.assertEqual(ordered[0]["model"], published["model"])
+        # and the bigger model still outranks a smallest one with no published score
+        small = {"model": "openai/gpt-oss-20b", "status": "ok", "ok_attempts": 2,
+                 "attempts": 2, "ttft_s": 0.2, "trials": []}
+        self.assertEqual(sorted([small, bigger], key=engine.rank_key)[0]["model"], bigger["model"])
+
+    def test_inherited_scores_are_labelled_as_inherited(self):
+        from nim import benchmarks
+
+        flash = benchmarks.lookup("minimaxai/minimax-m3.1-flash")
+        self.assertIsNotNone(flash)
+        self.assertTrue(flash.inherited)
+        self.assertIn("family", benchmarks.describe("minimaxai/minimax-m3.1-flash"))
+        self.assertFalse(benchmarks.lookup("nvidia/nemotron-3-ultra-550b-a55b").inherited)
+
+    def test_unknown_models_get_no_score(self):
+        from nim import benchmarks
+
+        self.assertIsNone(benchmarks.lookup("meta/muse-glimmer-30b"))
+        self.assertEqual(benchmarks.describe("meta/muse-glimmer-30b"), "")
+
+    def test_recommendation_is_gated_on_speed_not_just_rank(self):
+        slow = {"model": "minimaxai/minimax-m3.1-flash", "status": "ok", "ok_attempts": 2,
+                "attempts": 2, "ttft_s": 9.0, "trials": []}   # best score, too slow
+        quick = {"model": "nvidia/nemotron-3-ultra-550b-a55b", "status": "ok",
+                 "ok_attempts": 2, "attempts": 2, "ttft_s": 0.6, "trials": []}
+        report = {"models": {slow["model"]: slow, quick["model"]: quick}}
+        self.assertEqual(engine.recommended(report)["model"], quick["model"])
+        # flip the times: the better-scoring model is then recommended, not merely ranked first
+        slow["ttft_s"], quick["ttft_s"] = 0.6, 9.0
+        self.assertEqual(engine.recommended(report)["model"], slow["model"])
+
+    def test_recommendation_ignores_flaky_models(self):
+        flaky = {"model": "minimaxai/minimax-m3.1-flash", "status": "flaky", "ok_attempts": 1,
+                 "attempts": 2, "ttft_s": 0.3, "trials": []}
+        steady = {"model": "nvidia/nemotron-3-ultra-550b-a55b", "status": "ok",
+                  "ok_attempts": 2, "attempts": 2, "ttft_s": 0.6, "trials": []}
+        report = {"models": {flaky["model"]: flaky, steady["model"]: steady}}
+        self.assertEqual(engine.recommended(report)["model"], steady["model"])
+
+    def test_nothing_healthy_means_no_recommendation(self):
+        report = {"models": {"a/model-30b": {"model": "a/model-30b", "status": "stall",
+                                             "ok_attempts": 0, "attempts": 2, "ttft_s": None,
+                                             "trials": []}}}
+        self.assertIsNone(engine.recommended(report))
+        self.assertIn("nothing", render.best_line(report))
 
     def test_best_line_says_so_when_nothing_is_healthy(self):
         report = _fake_report({"a/model-30b": "stall"})

@@ -660,6 +660,39 @@ class LocalizationTests(unittest.TestCase):
         # es.yaml's rec.line wants {model}/{evidence}; asking for a key with wrong fields must not blow up
         self.assertIsInstance(i18n.t("rec.line", lang="es"), str)
 
+    def test_no_english_leaks_into_a_spanish_report(self):
+        """A translated page with one English word in it is the bug the reader notices first."""
+        from nim import commands, i18n, settings
+
+        report = self._report()
+        # config keys (shortlist, live_default, state_dir) stay verbatim on purpose: you type those
+        # into config.yaml, so translating the label would break the copy-paste.
+        english = ("family", "recommended", "fallback", "settings (", "models",
+                   "just now", "catalog:", "Unknown argument", "no scan yet")
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
+            i18n.reset_cache()
+            views = [render.render_cached(report), render.render_dead(report),
+                     render.render_catalog(report), render.render_added(report),
+                     render.render_probe(report), render.render_speed(report),
+                     commands.usage(), settings.describe()]
+        for text in views:
+            # /v1/models is the API path, not prose — it must survive translation untouched
+            scan = text.replace("/v1/models", "/v1/MODELS")
+            for word in english:
+                self.assertNotIn(word, scan, f"'{word}' is English, in Spanish output:\n{text[:200]}")
+
+    def test_the_family_tag_is_translated(self):
+        from nim import i18n
+
+        # minimax-m3.1-flash inherits its index from the M3 family, so it carries the tag
+        report = _fake_report({"minimaxai/minimax-m3.1-flash": "ok"})
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
+            i18n.reset_cache()
+            self.assertIn("familia", render.render_cached(report))
+        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
+            i18n.reset_cache()
+            self.assertIn("family", render.render_cached(report))
+
     def test_every_english_key_exists_in_every_shipped_language(self):
         from nim import i18n
 

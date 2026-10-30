@@ -134,21 +134,23 @@ def settings() -> Settings:
 
 
 def describe() -> str:
+    """The settings block under /nim help — translated, because half a translated page is a bug."""
+    from .i18n import t
+
     current = settings()
-    models = ", ".join(current.shortlist_models()) or "none"
-    return (
-        "settings (config.yaml → plugins.entries.hermes-nim.settings, or NIM_* env):\n"
-        f"· ttft_seconds: {current.ttft_seconds:g} (below 20 misreads cold starts as dead)\n"
-        f"· attempts: {current.attempts}\n"
-        f"· state_dir: {current.state_dir or '~/hermes-outputs/nim-probe'}\n"
-        f"· shortlist: {models}\n"
-        f"· live_default: {current.live_default} "
-        f"(/nim probes on every call; /nim cached is the instant view)\n"
-        f"· live_grace_seconds: {current.live_grace_seconds:g} (reuse a scan younger than this)\n"
-        f"· live_attempts: {current.live_attempts} (interactive /nim; /nim probe uses "
-        f"{current.attempts})\n"
-        f"· language: {current.language} (auto follows display.language; en/es shipped)"
-    )
+    models = ", ".join(current.shortlist_models()) or t("settings.none")
+    lines = [
+        t("settings.intro"),
+        t("settings.ttft", value=f"{current.ttft_seconds:g}"),
+        t("settings.attempts", value=current.attempts),
+        t("settings.state_dir", value=current.state_dir or "~/hermes-outputs/nim-probe"),
+        t("settings.shortlist", value=models),
+        t("settings.live_default", value=current.live_default),
+        t("settings.live_grace", value=f"{current.live_grace_seconds:g}"),
+        t("settings.live_attempts", value=current.live_attempts, attempts=current.attempts),
+        t("settings.language", value=current.language),
+    ]
+    return "\n".join(lines)
 
 
 __all__ = ["Settings", "settings", "configure", "describe"]

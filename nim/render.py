@@ -155,7 +155,8 @@ def _quality_tag(result: dict) -> str:
     published = benchmarks.lookup(str(result.get("model") or ""))
     if published is None:
         return ""
-    family = " family" if published.inherited else ""
+    # "family" is a claim about the number: it is the parent model's score, not this variant's.
+    family = f" {t('quality.family')}" if published.inherited else ""
     return f"{QUALITY_MARK}{published.index:g}{family}"
 
 

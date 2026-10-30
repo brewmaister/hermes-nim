@@ -41,6 +41,9 @@ label:
   rate_limited: "429 en todos los intentos"
   auth_error: "credencial rechazada — revisa NVIDIA_API_KEY"
 
+quality:
+  family: "familia"
+
 role:
   recommended: "recomendado"
   fallback: "respaldo {n}"
@@ -93,7 +96,7 @@ catalog:
   header: "**NVIDIA NIM catálogo** — {models} modelos listados"
   dropped: "· {count} dados de baja desde el último escaneo: {models}"
   verified: "· verificados respondiendo: {models}"
-  never_probed: "· {count} nunca probados (no están en tu config ni en candidatos)"
+  never_probed: "· {count} nunca probados (no están en tu config ni en la lista de candidatos)"
   footnote: "Que un modelo aparezca no prueba nada: /v1/models incluye ids que esta cuenta no puede llamar (404) y ids que responden cero bytes."
 
 dead:
@@ -125,5 +128,17 @@ usage:
 progress:
   measuring: "⏳ NVIDIA NIM — midiendo {models} modelos en vivo (peor caso ~{ttft}s si uno está atorado)…"
 
+cmd:
+  unknown: "Argumento desconocido '{verb}'."
+
 settings:
-  intro: "ajustes (config.yaml → plugins.entries.hermes-nim.settings, o variables NIM_*):"
+  intro: "ajustes (config.yaml → plugins.entries.hermes-nim.settings, o entorno NIM_*):"
+  ttft: "· ttft_seconds: {value} (por debajo de 20 toma los arranques en frío como caídos)"
+  attempts: "· attempts: {value}"
+  state_dir: "· state_dir: {value}"
+  shortlist: "· shortlist: {value}"
+  none: "ninguno"
+  live_default: "· live_default: {value} (/nim mide en cada llamada; /nim cached es la vista instantánea)"
+  live_grace: "· live_grace_seconds: {value} (reutiliza un escaneo más reciente que esto)"
+  live_attempts: "· live_attempts: {value} (para /nim interactivo; /nim probe usa {attempts})"
+  language: "· language: {value} (auto sigue display.language; incluye en/es)"

@@ -41,6 +41,10 @@ label:
   rate_limited: "429 throttled on every attempt"
   auth_error: "auth rejected — check NVIDIA_API_KEY"
 
+quality:
+  # Shown after the score when the index belongs to the parent model, not this exact variant.
+  family: "family"
+
 role:
   recommended: "recommended"
   fallback: "fallback {n}"
@@ -125,5 +129,17 @@ usage:
 progress:
   measuring: "⏳ NVIDIA NIM — measuring {models} models live (worst case ~{ttft}s if one is wedged)…"
 
+cmd:
+  unknown: "Unknown argument '{verb}'."
+
 settings:
   intro: "settings (config.yaml → plugins.entries.hermes-nim.settings, or NIM_* env):"
+  ttft: "· ttft_seconds: {value} (below 20 misreads cold starts as dead)"
+  attempts: "· attempts: {value}"
+  state_dir: "· state_dir: {value}"
+  shortlist: "· shortlist: {value}"
+  none: "none"
+  live_default: "· live_default: {value} (/nim probes on every call; /nim cached is the instant view)"
+  live_grace: "· live_grace_seconds: {value} (reuse a scan younger than this)"
+  live_attempts: "· live_attempts: {value} (interactive /nim; /nim probe uses {attempts})"
+  language: "· language: {value} (auto follows display.language; en/es shipped)"

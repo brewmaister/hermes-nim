@@ -141,7 +141,7 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
         return render.render_dead(report), (1 if _dead(report) else 0)
     if verb == "added":
         return render.render_added(report, _days(extra_args)), 0
-    return f"Unknown argument '{verb}'.\n\n{usage()}", 2
+    return t("cmd.unknown", verb=verb) + "\n\n" + usage(), 2
 
 
 def _dead(report: dict) -> list[dict]:

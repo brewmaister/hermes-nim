@@ -5,21 +5,33 @@ models still answer.
 
 ```
 /nim
-🧠 NVIDIA NIM · 14 min ago · 7 models
+**NVIDIA NIM** · 14 min ago · 7 models
 
-★ minimax-m3.1-flash — AA 29 · 0.41s · shortlist
-✓ nemotron-3-ultra-550b-a55b — AA 23 · 0.55s · fallback 2, moa
-✓ nemotron-3.5-lightning-30b-a3b — 0.25s · free, fallback 1
-✓ muse-glimmer-30b — 4.41s · shortlist
-✓ gpt-oss-20b — 0.23s · fallback 4
-✓ step-5-preview — 0.37s · shortlist
-✓ deepseek-v4.1-flash — 0.59s · fallback 3
+★ minimax-m3.1-flash — 🧠29 family · ⚡0.41s · shortlist
+✓ nemotron-3-ultra-550b-a55b — 🧠23 · ⚡0.55s · fallback 2, moa
+✓ nemotron-3.5-lightning-30b-a3b — ⚡0.25s · free, fallback 1
+✓ muse-glimmer-30b — ⚡4.41s · shortlist
+✓ gpt-oss-20b — ⚡0.23s · fallback 4
+✓ step-5-preview — ⚡0.37s · shortlist
+✓ deepseek-v4.1-flash — ⚡0.59s · fallback 3
 
-★ recommended: minimaxai/minimax-m3.1-flash — AA 29 · 1M ctx · 0.41s · 2/2
+**★ recommended** minimaxai/minimax-m3.1-flash — 🧠29 · 1M ctx · ⚡0.41s · 1/1
 catalog: 85 listed · 85 tracked
 
 /nim probe · /nim speed · /nim dead · /nim catalog
 ```
+
+**The glyphs are the labels:**
+
+| Glyph | Means | Source |
+|---|---|---|
+| 🧠 | published benchmark index (Artificial Analysis) | third-party run, dated in `nim/benchmarks.py` |
+| 📐 | parameter count, only when the id does not already state it | parsed from the model id |
+| ⚡ | measured time to first byte | this plugin, just now |
+| ★ | the recommended model | computed, see below |
+
+A model with no published score and no size in its id simply shows `⚡` — no glyph is ever filled in
+with a guess. `🧠29 family` means the score belongs to the model family, not to that exact variant.
 
 - **`/nim`** — the last scan, instantly. No agent turn, no tokens.
 - **`/nim probe`** — live scan of the NIM models your config uses plus a shortlist of candidates.
@@ -50,6 +62,16 @@ listen before "no answer" is a fact. Lower it and slow-but-alive models get repo
 `/nim cached` is the instant view, `live_default: false` puts the old behaviour back, and
 `NIM_LIVE=0` does it for one process. `hermes nim` follows the same default; `hermes nim cached` is
 the fast door for scripts.
+
+### Titles, bold, and the terminal
+
+The title is `**NVIDIA NIM**` — bold, no glyph, because the header is the one line that should not
+compete with the data for attention. Chat is the primary surface and Telegram renders
+MarkdownV2, so the canonical render carries the `**`.
+
+`hermes nim` prints through `render.plain()`, which strips the emphasis: a terminal must not show
+literal asterisks around a title, and teaching a second renderer every line would let the two doors
+drift. The glyphs stay in both — they are content, not decoration.
 
 ### Why it looks like that
 

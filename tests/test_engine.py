@@ -206,7 +206,7 @@ class RankTests(unittest.TestCase):
         # score outranks the bigger parameter count — this is the case the size prior got wrong.
         self.assertIn("minimax-m3.1-flash", first_model)
         self.assertNotIn("minimaxai/", first_model)
-        self.assertIn("★ recommended: minimaxai/minimax-m3.1-flash", text)
+        self.assertIn("**★ recommended** minimaxai/minimax-m3.1-flash", text)
         # model rows stay narrow enough not to wrap twice on a phone (the footer may run longer:
         # it is the one line carrying a full id you would paste into config.yaml)
         rows = [line for line in text.splitlines()
@@ -529,6 +529,52 @@ class ProgressMessageTests(unittest.TestCase):
             self.assertEqual(commands.slash_command_with_progress(ctx, ""), "report")
 
 
+class EmojiFormatTests(unittest.TestCase):
+    """One glyph per fact: 🧠 published score, 📐 parameter count, ⚡ measured time."""
+
+    def _report(self):
+        return _fake_report({}) | {"models": {
+            "minimaxai/minimax-m3.1-flash": {"model": "minimaxai/minimax-m3.1-flash",
+                                             "status": "ok", "ok_attempts": 2, "attempts": 2,
+                                             "ttft_s": 0.41},
+            "nvidia/nemotron-3.5-lightning-30b-a3b": {
+                "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "status": "ok",
+                "ok_attempts": 2, "attempts": 2, "ttft_s": 0.33},
+            "vendor/mystery-model": {"model": "vendor/mystery-model", "status": "stall",
+                                     "ok_attempts": 0, "attempts": 2, "ttft_s": None},
+        }}
+
+    def test_marks_carry_the_meaning(self):
+        text = render.render_cached(self._report())
+        self.assertIn("🧠29 family", text)          # published index, inherited family score
+        self.assertIn("⚡0.41s", text)              # measured first byte
+        # a size that the id already states is not repeated with a 📐 tag
+        self.assertNotIn("📐", text)
+        # a stalled model has no duration, so it carries no ⚡
+        stalled = next(line for line in text.splitlines() if line.startswith("✗"))
+        self.assertNotIn("⚡", stalled)
+        self.assertIn("stalled", stalled)
+
+    def test_size_mark_only_when_the_id_is_silent_about_size(self):
+        report = self._report()
+        report["models"]["vendor/mystery-model"]["params_hint"] = 70
+        line = render._line(report["models"]["vendor/mystery-model"], {})
+        self.assertTrue(line.startswith("✗"))
+
+    def test_title_is_bold_and_has_no_glyph(self):
+        first = render.render_cached(self._report()).splitlines()[0]
+        self.assertTrue(first.startswith("**NVIDIA NIM**"), first)
+        self.assertNotIn("🧠", first)
+
+    def test_plain_strips_the_emphasis_for_terminals(self):
+        text = render.render_cached(self._report())
+        flat = render.plain(text)
+        self.assertNotIn("**", flat)
+        self.assertIn("NVIDIA NIM · ", flat)
+        # the glyphs survive: they are content, not decoration
+        self.assertIn("🧠29", flat)
+
+
 class BrandTests(unittest.TestCase):
     """Every view names the provider. 'NIM' alone is a crate, a compiler, and a dozen other things."""
 
@@ -658,7 +704,7 @@ def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
 class RenderTests(unittest.TestCase):
     def test_cached_names_models_and_age(self):
         text = render.render_cached(_fake_report({"a": "ok", "b": "stall"}))
-        self.assertIn("★ a — 0.5s", text)
+        self.assertIn("★ a — ⚡0.5s", text)
         self.assertIn("✗ b — stalled", text)
         self.assertIn("2 models", text)
 

@@ -5,6 +5,7 @@ Bullets, no tables: these land in Telegram and a terminal alike, and a table die
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from . import benchmarks, engine
@@ -14,6 +15,16 @@ MAX_LINES = 26  # keep a chat reply readable; the artifact files hold the full p
 # The watchdog runs every 6h. Past a full cycle plus slack, "the last scan" is no longer evidence
 # about now — say so in the header rather than leaving the reader to do arithmetic on "7.2 h ago".
 STALE_AFTER_S = 7 * 3600
+
+
+def plain(text: str) -> str:
+    """Strip the emphasis for surfaces that print raw text.
+
+    The canonical render carries markdown because chat is the primary surface; a terminal must not
+    show literal ``**`` around a title, so the CLI door calls this rather than a second renderer
+    growing a variant of every line.
+    """
+    return re.sub(r"\*\*(.+?)\*\*", r"\1", text or "")
 
 
 def human_age(seconds: float | None) -> str:
@@ -79,17 +90,34 @@ def short_model(model: str) -> str:
     return str(model or "").split("/", 1)[-1]
 
 
+# One glyph per fact, so a row can be read at a glance instead of parsed:
+#   🧠 published benchmark index   📐 parameter count from the id   ⚡ time to first byte
+# The glyphs replace words, they do not invent data: a model with no published score shows no 🧠.
+QUALITY_MARK = "🧠"
+SIZE_MARK = "📐"
+SPEED_MARK = "⚡"
+
+
 def _quality_tag(result: dict) -> str:
-    """Published score when one exists, else the id's parameter count — and never both."""
+    """🧠 + published index, else 📐 + parameter count, else nothing. Never both."""
     model = str(result.get("model") or "")
     published = benchmarks.lookup(model)
     if published is not None:
-        return f"AA {published.index:g}"
+        family = " family" if published.inherited else ""
+        return f"{QUALITY_MARK}{published.index:g}{family}"
     size = engine.params_from_id(model)
     if size is None:
         return ""
     # The size is already in the name for most ids; repeating it is just width.
-    return "" if f"{size:g}b" in model.lower() else f"{size:g}B"
+    return "" if f"{size:g}b" in model.lower() else f"{SIZE_MARK}{size:g}B"
+
+
+def _speed_tag(result: dict) -> str:
+    """⚡ only in front of a measurement. `stalled` is a verdict, not a duration."""
+    measured = engine.metrics(result)
+    if not measured:
+        return ""
+    return f"{SPEED_MARK}{measured}" if measured[0].isdigit() else measured
 
 
 def _roles(result: dict, used: dict[str, list[str]]) -> str:
@@ -101,7 +129,7 @@ def _roles(result: dict, used: dict[str, list[str]]) -> str:
 
 def _line(result: dict, used: dict[str, list[str]], recommended: bool = False) -> str:
     """One model, one line: mark, short name, then the facts, separated by middots."""
-    bits = [bit for bit in (_quality_tag(result), engine.metrics(result),
+    bits = [bit for bit in (_quality_tag(result), _speed_tag(result),
                             _roles(result, used)) if bit]
     mark = "★" if recommended else MARKS.get(engine.severity(result), "·")
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
@@ -135,23 +163,24 @@ def best_line(report: dict) -> str:
         alive = [result for result in (report.get("models") or {}).values()
                  if engine.severity(result) == "ok"]
         if not alive:
-            return "★ recommended: nothing — no model answered every attempt"
-        return (f"★ recommended: nothing under {engine.RECOMMEND_MAX_TTFT_S:g}s — "
+            return "**★ recommended** nothing — no model answered every attempt"
+        return (f"**★ recommended** nothing under {engine.RECOMMEND_MAX_TTFT_S:g}s — "
                 f"the healthy models are all slower than that right now")
     model = str(pick.get("model") or "")
     published = benchmarks.lookup(model)
     why: list[str] = []
     if published is not None:
-        why.append(f"AA {published.index:g}")
+        why.append(f"{QUALITY_MARK}{published.index:g}")
         if published.context:
             why.append(f"{human_ctx(published.context)} ctx")
     else:
         size = engine.params_from_id(model)
         if size is not None:
-            why.append(f"{size:g}B")
-    why += [f"{pick.get('ttft_s')}s", f"{pick.get('ok_attempts')}/{pick.get('attempts')}"]
+            why.append(f"{SIZE_MARK}{size:g}B")
+    why += [f"{SPEED_MARK}{pick.get('ttft_s')}s",
+            f"{pick.get('ok_attempts')}/{pick.get('attempts')}"]
     # The footer keeps the full id on purpose: this is the line you paste into config.yaml.
-    return f"★ recommended: {model} — " + " · ".join(why)
+    return f"**★ recommended** {model} — " + " · ".join(why)
 
 
 def credential_block(report: dict) -> list[str]:
@@ -173,15 +202,15 @@ def credential_block(report: dict) -> list[str]:
 def render_speed(report: dict) -> str:
     """Latency, measured now: to first byte and to the end of the answer, median of the attempts."""
     if report.get("error"):
-        return f"⚡ NVIDIA NIM speed — {report['error']}"
+        return f"**NVIDIA NIM speed** — {report['error']}"
     banner = credential_block(report)
     if banner:
-        return "\n".join(["⚡ NVIDIA NIM speed — cannot measure"] + [""] + banner)
+        return "\n".join(["**NVIDIA NIM speed** — cannot measure"] + [""] + banner)
     models = list((report.get("models") or {}).values())
     answered = [m for m in models if m.get("ttft_median_s") is not None]
     silent = [m for m in models if m.get("ttft_median_s") is None]
     answered.sort(key=lambda m: (m.get("ttft_median_s") or 9e9, m.get("total_s") or 9e9))
-    lines = [f"⚡ NVIDIA NIM speed · just now · {report.get('attempts')}× each · "
+    lines = [f"**NVIDIA NIM speed** · just now · {report.get('attempts')}× each · "
              f"median time to first byte"]
     lines.append("")
     if not answered:
@@ -195,7 +224,7 @@ def render_speed(report: dict) -> str:
         tail = f" · {total}s to finish" if total is not None else ""
         flaky = ("" if result.get("ok_attempts") == result.get("attempts")
                  else f" · only {result.get('ok_attempts')}/{result.get('attempts')} answered")
-        lines.append(f"{position}. {short_model(model)} — {result.get('ttft_median_s')}s"
+        lines.append(f"{position}. {short_model(model)} — {SPEED_MARK}{result.get('ttft_median_s')}s"
                      f" ({spread}){tail}{flaky}")
     if silent:
         lines += ["", "no measurement (never emitted a byte): "
@@ -218,12 +247,12 @@ def changes_block(report: dict) -> list[str]:
 
 def render_probe(report: dict) -> str:
     if report.get("error"):
-        return f"🧠 NVIDIA NIM — {report['error']}"
+        return f"**NVIDIA NIM** — {report['error']}"
     banner = credential_block(report)
     if banner:
-        return "\n".join([f"🧠 NVIDIA NIM scan — aborted", ""] + banner)
+        return "\n".join([f"**NVIDIA NIM** scan — aborted", ""] + banner)
     models = report.get("models") or {}
-    header = (f"🧠 NVIDIA NIM scan · just now · {len(models)} models · "
+    header = (f"**NVIDIA NIM scan** · just now · {len(models)} models · "
               f"{report.get('attempts')}× each")
     lines = [header, ""] + model_lines(report) + changes_block(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
@@ -243,21 +272,21 @@ def _catalog_footnote(report: dict) -> str:
 
 def render_cached(report: dict) -> str:
     if not report:
-        return ("🧠 NVIDIA NIM — no scan yet.\n\n"
+        return ("**NVIDIA NIM** — no scan yet.\n\n"
                 "/nim probe scans the models your config uses (~30 s).\n"
                 "/nim cfg shows what those are without touching the network.")
     if report.get("error"):
-        return f"🧠 NVIDIA NIM — {report['error']}"
+        return f"**NVIDIA NIM** — {report['error']}"
     banner = credential_block(report)
     if banner:
-        lines = [f"🧠 NVIDIA NIM — {len(report.get('models') or {})} models known", ""] + banner + [""]
+        lines = [f"**NVIDIA NIM** — {len(report.get('models') or {})} models known", ""] + banner + [""]
         lines += model_lines(report)
         lines += ["", _catalog_footnote(report)]
         return "\n".join(lines)
     age = engine.scan_age_seconds(report)
     models = report.get("models") or {}
     stale = age is None or age >= STALE_AFTER_S
-    header = f"🧠 NVIDIA NIM · {human_age(age)} · {len(models)} models"
+    header = f"**NVIDIA NIM** · {human_age(age)} · {len(models)} models"
     if stale:
         header += " · ⏳ stale"
     lines = [header, ""]
@@ -272,16 +301,16 @@ def render_cached(report: dict) -> str:
 
 def render_catalog(report: dict) -> str:
     if not report:
-        return "🧠 NVIDIA NIM — no scan yet; run /nim probe first (the catalog is read during a scan)."
+        return "**NVIDIA NIM** — no scan yet; run /nim probe first (the catalog is read during a scan)."
     live = report.get("catalog") or []
     if not report.get("catalog_fetch_ok", True):
         live = report.get("catalog") or []
         if not live:
-            return "🧠 NVIDIA NIM — /v1/models did not answer on the last scan."
+            return "**NVIDIA NIM** — /v1/models did not answer on the last scan."
     dead = engine.removed_ids(report)
     usable = [model for model in live
               if (report.get("models") or {}).get(model, {}).get("status") == "ok"]
-    lines = [f"🧠 NVIDIA NIM catalog — {len(live)} models listed"]
+    lines = [f"**NVIDIA NIM** catalog — {len(live)} models listed"]
     if dead:
         lines.append(f"· {len(dead)} dropped since the last scan: {', '.join(dead[:5])}"
                      + ("…" if len(dead) > 5 else ""))
@@ -297,12 +326,12 @@ def render_catalog(report: dict) -> str:
 
 def render_dead(report: dict) -> str:
     if not report:
-        return "🧠 NVIDIA NIM — no scan yet; run /nim probe."
+        return "**NVIDIA NIM** — no scan yet; run /nim probe."
     _, _, dead = _grouped(report)
     removed = engine.removed_ids(report)
     lines = []
     if dead:
-        lines.append(f"🧠 NVIDIA NIM — {len(dead)} not usable")
+        lines.append(f"**NVIDIA NIM** — {len(dead)} not usable")
         used = report.get("configured_in") or {}
         lines += [f"• {result['model']} — {engine.label(result)}"
                   f"{' · ' + short_where((used or {}).get(result['model']) or []) if short_where((used or {}).get(result['model']) or []) else ''}"
@@ -311,22 +340,22 @@ def render_dead(report: dict) -> str:
         lines += ["", f"dropped from /v1/models ({len(removed)}): "
                       + ", ".join(removed[:8]) + ("…" if len(removed) > 8 else "")]
     if not lines:
-        return "🧠 NVIDIA NIM — nothing is currently dead in the last scan."
+        return "**NVIDIA NIM** — nothing is currently dead in the last scan."
     return "\n".join(lines)
 
 
 def render_added(report: dict, days: float = 7.0) -> str:
     if not report:
-        return "🧠 NVIDIA NIM — no scan yet; run /nim probe."
+        return "**NVIDIA NIM** — no scan yet; run /nim probe."
     added = engine.added_ids(report, days)
     if not added:
         seeded = report.get("catalog_seen") or {}
         since = min((str(r.get("first_seen")) for r in seeded.values() if r.get("first_seen")),
                     default="")
         hint = f" (tracking since {since[:10]})" if since else ""
-        return f"🧠 NVIDIA NIM — no new models in the last {days:g} days{hint}."
+        return f"**NVIDIA NIM** — no new models in the last {days:g} days{hint}."
     probed = report.get("new_models_probed") or {}
-    lines = [f"🧠 NVIDIA NIM — {len(added)} model(s) first seen in the last {days:g} days"]
+    lines = [f"**NVIDIA NIM** — {len(added)} model(s) first seen in the last {days:g} days"]
     for model in added:
         verdict = probed.get(model)
         detail = f" — {verdict['status']}" if verdict else ""
@@ -338,9 +367,9 @@ def render_added(report: dict, days: float = 7.0) -> str:
 
 def render_cfg(used: dict[str, list[str]], config_path: str) -> str:
     if not used:
-        return ("🧠 NVIDIA NIM — no `provider: nvidia` models in config.yaml.\n"
+        return ("**NVIDIA NIM** — no `provider: nvidia` models in config.yaml.\n"
                 "Nothing to watch; add one, or use /nim probe to check the shortlist only.")
-    lines = [f"🧠 NVIDIA NIM — {len(used)} NIM model(s) in config.yaml"]
+    lines = [f"**NVIDIA NIM** — {len(used)} NIM model(s) in config.yaml"]
     for model, where in used.items():
         lines.append(f"• {model} — {short_where(where) or ', '.join(where)}")
     lines += ["", config_path]

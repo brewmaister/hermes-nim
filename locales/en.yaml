@@ -137,7 +137,7 @@ usage:
   tail: "/nim version · /nim help"
 
 progress:
-  measuring: "⏳ NVIDIA NIM — measuring {models} models live (worst case ~{ttft}s if one is wedged)…"
+  measuring: "⏳ NVIDIA NIM — measuring your {models} models (worst case ~{ttft}s if one is wedged){board}…"
 
 cmd:
   unknown: "Unknown argument '{verb}'."

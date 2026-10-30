@@ -195,9 +195,16 @@ def will_measure(verb: str) -> bool:
 
 
 def measuring_note() -> str:
+    """The one line you see for ~1 s while the scan runs — same vocabulary as the result.
+
+    It used to say "measuring 5 models live", which is the same unexplained count the result line just
+    stopped printing. Badge comes from the last survey, so the placeholder already tells you how much
+    of the catalog is even usable.
+    """
     current = settings.settings()
     models = len(engine.configured_models()) + len(current.shortlist_models())
-    return t("progress.measuring", models=models, ttft=f"{current.ttft_seconds:g}")
+    board = render.board_badge(engine.load_state(current.state_dir))
+    return t("progress.measuring", models=models, ttft=f"{current.ttft_seconds:g}", board=board)
 
 
 def slash_command_with_progress(ctx, raw_args: str = "", **kwargs) -> str | None:

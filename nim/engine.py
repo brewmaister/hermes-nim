@@ -628,8 +628,24 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         if model in models_by_id:
             models_by_id[model].update(info)
 
+    # A survey is a different measurement from a chat scan, and the two counts sit on the same screen,
+    # so record which one happened and what it found. Inferring "was this surveyed?" from "does the id
+    # appear in models" is wrong: a chat scan also puts its models there.
+    # Carry the last survey forward through a chat scan: a config-only scan must not erase the board.
+    survey_info = previous.get("survey")
+    if survey and live_catalog:
+        listed = set(live_catalog)
+        measured = [result for result in results if result["model"] in listed]
+        survey_info = {
+            "at": _now_iso(),
+            "listed": len(live_catalog),
+            "measured": len(measured),
+            "online": sum(1 for result in measured if result.get("status") == "ok"),
+        }
+
     report = {
         "version": STATE_VERSION,
+        "survey": survey_info,
         "run_at": _now_iso(),
         "base": base,
         "ttft_cap_s": ttft,

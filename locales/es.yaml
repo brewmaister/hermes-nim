@@ -7,7 +7,7 @@
 # Los glifos (🧠 ⚡ ★ ✓ ⚠ ✗) no se traducen: son etiquetas. `{placeholders}` tampoco.
 
 header:
-  cached: "**NVIDIA NIM** · {age} · {models} modelos"
+  cached: "**NVIDIA NIM** · {age} · {models} modelos en uso"
   known: "**NVIDIA NIM** — {models} modelos conocidos"
   probe: "**NVIDIA NIM escaneo** · ahora mismo · {models} modelos · {attempts}× cada uno"
   aborted: "**NVIDIA NIM escaneo** — abortado"
@@ -59,6 +59,8 @@ rec:
 
 foot:
   catalog: "catálogo: {listed} listados · {tracked} rastreados"
+  catalog_survey: "tablero: {online} de {surveyed} modelos medidos responden · {listed} listados · medido {age}"
+  catalog_unsurveyed: "tablero: {listed} listados · aún sin medir (/nim survey los mide todos)"
   catalog_extra: " (las bajas se guardan en el historial)"
   catalog_failed: "catálogo: /v1/models no respondió — no se rastrearon altas ni bajas"
   hints: "/nim probe · /nim speed · /nim dead · /nim catalog"

@@ -563,6 +563,21 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertNotIn("30B", line)
         self.assertIn("30b", line)   # it is in the name, which is where a reader looks for it
 
+    def test_the_two_counts_say_which_is_which(self):
+        """"5 models" over "85 tracked" reads as "scanned 85, five answered". It must not."""
+        survey = {"at": engine._now_iso(), "listed": 2, "measured": 2, "online": 1}
+        report = _fake_report({"a/one": "ok", "a/two": "stall"}, catalog=("a/one", "a/two"),
+                              survey=survey)
+        text = render.render_cached(report)
+        self.assertIn("2 models you use", text)
+        self.assertIn("board: 1 of 2 measured models answer", text)
+        self.assertIn("2 listed", text)
+
+    def test_an_unsurveyed_catalog_does_not_pretend_to_a_verdict(self):
+        report = _fake_report({"a/one": "ok"}, catalog=("a/one", "other/x", "other/y"))
+        text = render.render_cached(report)
+        self.assertIn("board: 3 listed · not surveyed yet", text)
+
     def test_the_star_row_says_recommended_instead_of_its_config_role(self):
         report = self._report()
         report["configured_in"] = {"minimaxai/minimax-m3.1-flash": ["shortlist"]}
@@ -887,12 +902,12 @@ moa:
 
 
 def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
-                 changes=None) -> dict:
+                 changes=None, survey=None) -> dict:
     models = {}
     for model, status in statuses.items():
         models[model] = {"model": model, "status": status, "ok_attempts": 2, "attempts": 2,
                          "ttft_s": 0.5 if status == "ok" else None, "trials": ["ok:0.5"] * 2}
-    return {"run_at": engine._now_iso(), "attempts": 2, "models": models,
+    return {"run_at": engine._now_iso(), "attempts": 2, "models": models, "survey": survey,
             "configured_in": {model: ["fallback_providers[0]"] for model in statuses},
             "catalog": list(catalog), "catalog_fetch_ok": fetch_ok,
             "catalog_seen": {model: {"first_seen": engine._now_iso()} for model in catalog},

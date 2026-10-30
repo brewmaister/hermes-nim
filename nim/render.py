@@ -322,14 +322,21 @@ def render_probe(report: dict) -> str:
 
 
 def _catalog_footnote(report: dict) -> str:
+    """Two counts sit next to each other here, so say which is which.
+
+    `{models} measured` in the header is what this scan touched — the models you point at. The board
+    is a different measurement (every listed id, once). Printing "5 models" above "85 tracked" invited
+    the reading "it scanned 85 and only 5 answered", which is the opposite of what happened.
+    """
     size = len(report.get("catalog") or [])
     if not report.get("catalog_fetch_ok", True) and not size:
         return t("foot.catalog_failed")
-    tracked = len(report.get("catalog_seen") or {})
-    note = t("foot.catalog", listed=size, tracked=tracked)
-    if size and tracked and tracked != size:
-        note += t("foot.catalog_extra")
-    return note
+    survey = report.get("survey") or {}
+    if not survey:
+        return t("foot.catalog_unsurveyed", listed=size)
+    age = engine.scan_age_seconds({"run_at": survey.get("at")})
+    return t("foot.catalog_survey", listed=size, online=survey.get("online") or 0,
+             surveyed=survey.get("measured") or 0, age=human_age(age))
 
 
 def render_cached(report: dict) -> str:
@@ -376,10 +383,11 @@ def render_catalog(report: dict, limit: int = 12) -> str:
                     key=lambda model: engine.rank_key(models[model]))
     broken = sorted((model for model in surveyed if models[model].get("status") != "ok"),
                     key=lambda model: str(models[model].get("status")))
-    age = engine.scan_age_seconds(report)
+    survey = report.get("survey") or {}
     header = t("catalog.header", models=len(live))
-    if surveyed:
-        header += " · " + t("catalog.surveyed", age=human_age(age))
+    if survey:
+        header += " · " + t(
+            "catalog.surveyed", age=human_age(engine.scan_age_seconds({"run_at": survey.get("at")})))
     lines = [header]
     removed = engine.removed_ids(report)
     if removed:

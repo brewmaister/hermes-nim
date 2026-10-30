@@ -7,7 +7,7 @@
 # language (a test enforces it), and a missing key falls back to English rather than to its name.
 
 header:
-  cached: "**NVIDIA NIM** · {age} · {models} models"
+  cached: "**NVIDIA NIM** · {age} · {models} models you use"
   known: "**NVIDIA NIM** — {models} models known"
   probe: "**NVIDIA NIM scan** · just now · {models} models · {attempts}× each"
   aborted: "**NVIDIA NIM scan** — aborted"
@@ -60,6 +60,8 @@ rec:
 
 foot:
   catalog: "catalog: {listed} listed · {tracked} tracked"
+  catalog_survey: "board: {online} of {surveyed} measured models answer · {listed} listed · surveyed {age}"
+  catalog_unsurveyed: "board: {listed} listed · not surveyed yet (/nim survey measures all of them)"
   catalog_extra: " (removals kept in history)"
   catalog_failed: "catalog: /v1/models did not answer — arrival/removal tracking skipped"
   hints: "/nim probe · /nim speed · /nim dead · /nim catalog"

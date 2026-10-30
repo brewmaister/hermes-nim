@@ -21,7 +21,9 @@ MAX_LINES = 26  # keep a chat reply readable; the artifact files hold the full p
 # about now — say so in the header rather than leaving the reader to do arithmetic on "7.2 h ago".
 STALE_AFTER_S = 7 * 3600
 
-MARKS = {"ok": "✓", "warn": "⚠", "dead": "✗"}
+# Say the status, not a tick: ✅/🆗 reads "works", 💀 reads "gone". A tick next to a model you cannot
+# call was the confusing part — it looked like approval rather than a health verdict.
+MARKS = {"ok": "🆗", "warn": "⚠️", "dead": "💀"}
 
 # One glyph per fact, so a row can be read at a glance instead of parsed:
 #   🧠 published benchmark index   ⚡ time to first byte
@@ -445,7 +447,7 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(t("board.yours"))
             elif model in watched_only:
                 bits.append(t("board.watching"))
-            mark = "★" if model == pick_model else "✓"
+            mark = "★" if model == pick_model else MARKS["ok"]
             lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
         if len(chat) > limit:
             lines.append(t("foot.more", hidden=len(chat) - limit))

@@ -573,7 +573,7 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertNotIn("🧠", lightning)
         self.assertIn("⚡0.33s", lightning)
         # a stalled model has no duration, so it carries no ⚡
-        stalled = next(line for line in text.splitlines() if line.startswith("✗"))
+        stalled = next(line for line in text.splitlines() if line.startswith("💀"))
         self.assertNotIn("⚡", stalled)
         self.assertIn("stalled", stalled)
 
@@ -657,7 +657,7 @@ class CapabilityTests(unittest.TestCase):
                                "nvidia/nemotron-parse": "not_provisioned"},
                               catalog=ids, survey=survey)
         text = render.render_board(report)
-        self.assertIn("1 chat · 1 utility online · 2 offline", text)
+        self.assertIn("🆗 1 chat · 1 utility online · 💀 2 offline", text)
         self.assertIn("chat — usable now", text)
         self.assertIn("minimax-m3.1-flash", text)
         self.assertIn("utility (not for chat)", text)
@@ -1023,7 +1023,7 @@ class RenderTests(unittest.TestCase):
     def test_cached_names_models_and_age(self):
         text = render.render_cached(_fake_report({"a": "ok", "b": "stall"}))
         self.assertIn("★ a — ⚡0.5s", text)
-        self.assertIn("✗ b — stalled", text)
+        self.assertIn("💀 b — stalled", text)
         self.assertIn("2 models", text)
 
     def test_a_stale_scan_says_so_in_the_header(self):
@@ -1197,7 +1197,7 @@ class ScanTests(unittest.TestCase):
         self.assertNotIn("cloud/one", cached)               # strangers stay out of the chat view
         self.assertIn(" nvidia/a", cached.replace("—", " "))
         board = render.render_catalog(report)
-        self.assertIn("✓ 4 answering", board)               # but the board shows all four
+        self.assertIn("🆗 4 answering", board)               # but the board shows all four
 
     def test_a_chat_scan_does_not_erase_the_board(self):
         """The bug behind "it still says five models": /nim used to overwrite the survey's 85 verdicts."""

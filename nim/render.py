@@ -453,8 +453,11 @@ def render_board(report: dict, limit: int = 14) -> str:
         if len(chat) > limit:
             lines.append(t("foot.more", hidden=len(chat) - limit))
     if utility:
-        lines += ["", t("board.section_utility"),
-                  "· " + ", ".join(short_model(model) for model in utility[:limit])]
+        # one per line: a comma-separated run of ids is a paragraph you have to decode, not a list
+        lines += ["", t("board.section_utility")]
+        lines += [f"· {short_model(model)}" for model in utility[:limit]]
+        if len(utility) > limit:
+            lines.append(t("foot.more", hidden=len(utility) - limit))
 
     if offline:
         lines += ["", t("board.offline_header", count=len(offline))]

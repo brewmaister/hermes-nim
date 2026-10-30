@@ -206,7 +206,7 @@ class RankTests(unittest.TestCase):
         # score outranks the bigger parameter count — this is the case the size prior got wrong.
         self.assertIn("minimax-m3.1-flash", first_model)
         self.assertNotIn("minimaxai/", first_model)
-        self.assertIn("**⭐️ recommended** minimaxai/minimax-m3.1-flash", text)
+        self.assertIn("⭐️ recommended minimaxai/minimax-m3.1-flash", text)
         # model rows stay narrow enough not to wrap twice on a phone (the footer may run longer:
         # it is the one line carrying a full id you would paste into config.yaml)
         rows = [line for line in text.splitlines()
@@ -618,10 +618,24 @@ class EmojiFormatTests(unittest.TestCase):
                         if line.startswith("⭐"))
         self.assertIn("recomendado", star)
 
-    def test_title_is_bold_and_has_no_glyph(self):
+    def test_the_title_is_plain_text_and_has_no_glyph(self):
+        """Plugin output is delivered as plain text: `**bold**` reaches the reader as asterisks."""
         first = render.render_cached(self._report()).splitlines()[0]
-        self.assertTrue(first.startswith("**NVIDIA NIM**"), first)
+        self.assertTrue(first.startswith("NVIDIA NIM"), first)
         self.assertNotIn("🧠", first)
+
+    def test_no_view_emits_markdown(self):
+        """Every door is plain text. A stray `**` or backtick is a bug the reader sees literally."""
+        report = self._report()
+        views = [render.render_cached(report), render.render_probe(report),
+                 render.render_board(report), render.render_catalog(report),
+                 render.render_dead(report), render.render_added(report),
+                 render.render_speed(report), commands.usage()]
+        from nim import settings as settings_module
+        views.append(settings_module.describe())
+        for text in views:
+            self.assertNotIn("**", text)
+            self.assertNotIn("`", text)
 
     def test_plain_strips_the_emphasis_for_terminals(self):
         text = render.render_cached(self._report())

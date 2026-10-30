@@ -115,14 +115,14 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
     if verb == "json":
         report = engine.load_state(current.state_dir)
         if not report:
-            return ("**NVIDIA NIM** — no scan yet; run /nim probe first."), 2
+            return t("empty.no_scan_probe"), 2
         return jsonlib.dumps(report, indent=1), 0
 
     if verb == "speed":
         attempts = int(_days(extra_args, 3))
         report = do_speed_scan(attempts)
         if report.get("error"):
-            return f"**NVIDIA NIM speed** — {report['error']}", 2
+            return t("speed.error", error=report["error"]), 2
         return render.render_speed(report), 0
 
     # `/nim` measures. A cached verdict needs the reader to judge whether "22 min ago" still means
@@ -154,14 +154,14 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
         # One attempt and a wide fan-out: the floor is one ttft cap, not two waves of two attempts.
         report = do_scan(attempts=current.live_attempts, workers=12)
         if report.get("error"):
-            return f"**NVIDIA NIM** — {report['error']}", 2
+            return t("empty.error", error=report["error"]), 2
         return render.render_probe(report), 0
 
     report = None
     if force_scan or verb == "probe":
         report = do_scan()
         if report.get("error"):
-            return f"**NVIDIA NIM** — {report['error']}", 2
+            return t("empty.error", error=report["error"]), 2
     else:
         report = engine.load_state(current.state_dir)
 

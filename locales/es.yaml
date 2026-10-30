@@ -4,14 +4,14 @@
 # identificadores de modelo, los verbos de comando y las palabras que ya son estándar en la jerga
 # (fallback se traduce como "respaldo", throttled como "limitado") se quedan legibles.
 #
-# Los glifos (🧠 ⚡ ⭐️ ✔️ ⚠️ 🔴 🟢 🛠 🆕) no se traducen: son etiquetas. `{placeholders}` tampoco.
+# Los glifos (🧠 ⚡ ⭐️ ✔️ ⚠️ 🔴 🟢 🛠 🆕) no se traducen: son etiquetas. {placeholders} tampoco.
 
 header:
-  cached: "**NVIDIA NIM** · {age} · tus {models} modelos{board}"
+  cached: "NVIDIA NIM · {age} · tus {models} modelos{board}"
   board: " · {online}/{listed} listados responden"
-  known: "**NVIDIA NIM** — {models} modelos conocidos"
-  probe: "**NVIDIA NIM escaneo** · ahora mismo · tus {models} modelos · {attempts}× cada uno{board}"
-  aborted: "**NVIDIA NIM escaneo** — abortado"
+  known: "NVIDIA NIM — {models} modelos conocidos"
+  probe: "NVIDIA NIM escaneo · ahora mismo · tus {models} modelos · {attempts}× cada uno{board}"
+  aborted: "NVIDIA NIM escaneo — abortado"
   stale_badge: " · ⏳ viejo"
 
 age:
@@ -53,9 +53,9 @@ role:
   shortlist: "candidato"
 
 rec:
-  line: "**⭐️ recomendado** {model} — {evidence}"
-  none: "**⭐️ recomendado** nada — ningún modelo respondió todos los intentos"
-  none_slow: "**⭐️ recomendado** nada por debajo de {cap}s — ahora mismo los modelos sanos son más lentos que eso"
+  line: "⭐️ recomendado {model} — {evidence}"
+  none: "⭐️ recomendado nada — ningún modelo respondió todos los intentos"
+  none_slow: "⭐️ recomendado nada por debajo de {cap}s — ahora mismo los modelos sanos son más lentos que eso"
   ctx: "{ctx} de contexto"
 
 foot:
@@ -77,9 +77,9 @@ cred:
   no_detail: "sin detalle en la respuesta"
 
 speed:
-  header: "**NVIDIA NIM velocidad** · ahora mismo · {attempts}× cada uno · mediana del primer byte"
-  cannot: "**NVIDIA NIM velocidad** — no se puede medir"
-  error: "**NVIDIA NIM velocidad** — {error}"
+  header: "NVIDIA NIM velocidad · ahora mismo · {attempts}× cada uno · mediana del primer byte"
+  cannot: "NVIDIA NIM velocidad — no se puede medir"
+  error: "NVIDIA NIM velocidad — {error}"
   none: "Ningún modelo respondió — no hay nada que medir."
   finish: "{seconds}s para terminar"
   flaky: "solo {ok}/{attempts} respondieron"
@@ -88,15 +88,15 @@ speed:
   fastest: "más rápido ahora: {model} — {seconds}s"
 
 empty:
-  no_scan: "**NVIDIA NIM** — todavía no hay escaneo.\n\n/nim probe revisa los modelos que usa tu config (~30 s).\n/nim cfg muestra cuáles son sin tocar la red."
-  no_scan_probe: "**NVIDIA NIM** — todavía no hay escaneo; corre /nim probe."
-  no_scan_catalog: "**NVIDIA NIM** — todavía no hay escaneo; corre /nim probe primero (el catálogo se lee durante el escaneo)."
-  catalog_failed: "**NVIDIA NIM** — /v1/models no respondió en el último escaneo."
-  cfg_none: "**NVIDIA NIM** — no hay modelos con `provider: nvidia` en config.yaml.\nNo hay nada que vigilar; agrega uno, o usa /nim probe para revisar solo la lista de candidatos."
-  error: "**NVIDIA NIM** — {error}"
+  no_scan: "NVIDIA NIM — todavía no hay escaneo.\n\n/nim probe revisa los modelos que usa tu config (~30 s).\n/nim cfg muestra cuáles son sin tocar la red."
+  no_scan_probe: "NVIDIA NIM — todavía no hay escaneo; corre /nim probe."
+  no_scan_catalog: "NVIDIA NIM — todavía no hay escaneo; corre /nim probe primero (el catálogo se lee durante el escaneo)."
+  catalog_failed: "NVIDIA NIM — /v1/models no respondió en el último escaneo."
+  cfg_none: "NVIDIA NIM — no hay modelos con provider: nvidia en config.yaml.\nNo hay nada que vigilar; agrega uno, o usa /nim probe para revisar solo la lista de candidatos."
+  error: "NVIDIA NIM — {error}"
 
 catalog:
-  header: "**NVIDIA NIM catálogo** — {models} modelos listados"
+  header: "NVIDIA NIM catálogo — {models} modelos listados"
   dropped: "· {count} dados de baja desde el último escaneo: {models}"
   verified: "· verificados respondiendo: {models}"
   surveyed: "medido {age}"
@@ -109,18 +109,18 @@ catalog:
   footnote: "Que un modelo aparezca no prueba nada: /v1/models incluye ids que esta cuenta no puede llamar (404) y ids que responden cero bytes."
 
 dead:
-  header: "**NVIDIA NIM** — {count} sin usar"
-  none: "**NVIDIA NIM** — nada está caído en el último escaneo."
+  header: "NVIDIA NIM — {count} sin usar"
+  none: "NVIDIA NIM — nada está caído en el último escaneo."
   dropped: "dados de baja de /v1/models ({count}): {models}"
 
 added:
-  header: "**NVIDIA NIM** — {count} modelo(s) vistos por primera vez en los últimos {days} días"
-  none: "**NVIDIA NIM** — sin modelos nuevos en los últimos {days} días{hint}."
+  header: "NVIDIA NIM — {count} modelo(s) vistos por primera vez en los últimos {days} días"
+  none: "NVIDIA NIM — sin modelos nuevos en los últimos {days} días{hint}."
   tracking: " (rastreando desde {date})"
   footnote: "Los recién llegados se prueban una vez al aparecer; la mayoría resulta ser 404 sin aprovisionar para esta cuenta."
 
 cfg:
-  header: "**NVIDIA NIM** — {count} modelo(s) NIM en config.yaml"
+  header: "NVIDIA NIM — {count} modelo(s) NIM en config.yaml"
 
 usage:
   nim: "/nim — escaneo en vivo, ahora (mide cada modelo; ~15-40 s)"
@@ -136,7 +136,7 @@ usage:
   tail: "/nim version · /nim help"
 
 board:
-  header: "**NVIDIA NIM** · medido {age} · {listed} listados"
+  header: "NVIDIA NIM · medido {age} · {listed} listados"
   counts: "🟢 {chat} de chat · 🛠 {utility} · 🔴 {offline} caídos"
   section_chat: "🟢 chat — usables ahora"
   section_utility: "🛠 utilitarios"

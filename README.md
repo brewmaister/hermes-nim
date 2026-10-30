@@ -26,12 +26,14 @@ catalog: 85 listed · 85 tracked
 | Glyph | Means | Source |
 |---|---|---|
 | 🧠 | published benchmark index (Artificial Analysis) | third-party run, dated in `nim/benchmarks.py` |
-| 📐 | parameter count, only when the id does not already state it | parsed from the model id |
 | ⚡ | measured time to first byte | this plugin, just now |
 | ★ | the recommended model | computed, see below |
 
-A model with no published score and no size in its id simply shows `⚡` — no glyph is ever filled in
-with a guess. `🧠29 family` means the score belongs to the model family, not to that exact variant.
+A model with no published score shows only `⚡` — no glyph is ever filled in with a guess, and there
+is no parameter-count glyph at all: an id only yields a size when it spells the size out, so a `30B`
+tag would always repeat what the name already says. The size appears where it is not redundant — in
+the recommendation footer, for a model with no benchmark. `🧠29 family` means the score belongs to
+the model family, not to that exact variant.
 
 - **`/nim`** — the last scan, instantly. No agent turn, no tokens.
 - **`/nim probe`** — live scan of the NIM models your config uses plus a shortlist of candidates.

@@ -548,18 +548,20 @@ class EmojiFormatTests(unittest.TestCase):
         text = render.render_cached(self._report())
         self.assertIn("🧠29 family", text)          # published index, inherited family score
         self.assertIn("⚡0.41s", text)              # measured first byte
-        # a size that the id already states is not repeated with a 📐 tag
-        self.assertNotIn("📐", text)
+        # a model with no published score gets no 🧠 — the glyph is never filled in with a guess
+        lightning = next(line for line in text.splitlines() if "lightning" in line)
+        self.assertNotIn("🧠", lightning)
+        self.assertIn("⚡0.33s", lightning)
         # a stalled model has no duration, so it carries no ⚡
         stalled = next(line for line in text.splitlines() if line.startswith("✗"))
         self.assertNotIn("⚡", stalled)
         self.assertIn("stalled", stalled)
 
-    def test_size_mark_only_when_the_id_is_silent_about_size(self):
-        report = self._report()
-        report["models"]["vendor/mystery-model"]["params_hint"] = 70
-        line = render._line(report["models"]["vendor/mystery-model"], {})
-        self.assertTrue(line.startswith("✗"))
+    def test_a_size_the_id_already_states_is_never_repeated(self):
+        line = render._line({"model": "nvidia/nemotron-3.5-lightning-30b-a3b", "status": "ok",
+                             "ok_attempts": 1, "attempts": 1, "ttft_s": 0.3}, {})
+        self.assertNotIn("30B", line)
+        self.assertIn("30b", line)   # it is in the name, which is where a reader looks for it
 
     def test_title_is_bold_and_has_no_glyph(self):
         first = render.render_cached(self._report()).splitlines()[0]

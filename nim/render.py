@@ -91,25 +91,23 @@ def short_model(model: str) -> str:
 
 
 # One glyph per fact, so a row can be read at a glance instead of parsed:
-#   🧠 published benchmark index   📐 parameter count from the id   ⚡ time to first byte
+#   🧠 published benchmark index   ⚡ time to first byte
 # The glyphs replace words, they do not invent data: a model with no published score shows no 🧠.
+#
+# There is deliberately no glyph for parameter count. An id only yields a size when it spells the
+# size out (`…-30b-a3b`), so a size tag would always repeat what the name already says. The number
+# still appears where it is not redundant: the recommendation footer, for models with no benchmark.
 QUALITY_MARK = "🧠"
-SIZE_MARK = "📐"
 SPEED_MARK = "⚡"
 
 
 def _quality_tag(result: dict) -> str:
-    """🧠 + published index, else 📐 + parameter count, else nothing. Never both."""
-    model = str(result.get("model") or "")
-    published = benchmarks.lookup(model)
-    if published is not None:
-        family = " family" if published.inherited else ""
-        return f"{QUALITY_MARK}{published.index:g}{family}"
-    size = engine.params_from_id(model)
-    if size is None:
+    """🧠 + published index, or nothing at all."""
+    published = benchmarks.lookup(str(result.get("model") or ""))
+    if published is None:
         return ""
-    # The size is already in the name for most ids; repeating it is just width.
-    return "" if f"{size:g}b" in model.lower() else f"{SIZE_MARK}{size:g}B"
+    family = " family" if published.inherited else ""
+    return f"{QUALITY_MARK}{published.index:g}{family}"
 
 
 def _speed_tag(result: dict) -> str:
@@ -176,7 +174,7 @@ def best_line(report: dict) -> str:
     else:
         size = engine.params_from_id(model)
         if size is not None:
-            why.append(f"{SIZE_MARK}{size:g}B")
+            why.append(f"{size:g}B")
     why += [f"{SPEED_MARK}{pick.get('ttft_s')}s",
             f"{pick.get('ok_attempts')}/{pick.get('attempts')}"]
     # The footer keeps the full id on purpose: this is the line you paste into config.yaml.

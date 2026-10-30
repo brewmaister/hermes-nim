@@ -670,6 +670,48 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn("never surveyed", render.render_board(report))
 
 
+class NewModelTests(unittest.TestCase):
+    """🆕 has to mean "arrived", not "was there on install day"."""
+
+    def test_the_install_baseline_is_never_flagged_new(self):
+        def fake_probe(_b, model, _k, _t, attempts, _s):
+            return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
+                    "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n")
+            with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                    mock.patch.object(engine, "catalog", return_value=["a/one", "a/two"]):
+                first = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=config,
+                                    configured_dir=tmp, survey=True, survey_ttft=1)
+        self.assertEqual(render.new_models(first), set())      # baseline: 85 "new" would be a lie
+        self.assertNotIn(render.NEW_MARK, render.render_board(first))
+
+    def test_a_model_that_appears_later_is_flagged(self):
+        def fake_probe(_b, model, _k, _t, attempts, _s):
+            return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
+                    "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
+                    "checked_at": engine._now_iso()}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config.yaml"
+            config.write_text("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n")
+            with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                    mock.patch.object(engine, "catalog", return_value=["a/one"]):
+                engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=config,
+                            configured_dir=tmp, survey=True, survey_ttft=1)
+            with mock.patch.object(engine, "probe", side_effect=fake_probe), \
+                    mock.patch.object(engine, "catalog", return_value=["a/one", "a/brand-new"]):
+                later = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=config,
+                                    configured_dir=tmp, survey=True, survey_ttft=1)
+        self.assertEqual(render.new_models(later), {"a/brand-new"})
+        board = render.render_board(later)
+        self.assertIn(render.NEW_MARK, board)
+        self.assertIn("🆕 1 new in 7 days", board)
+
+
 class LocalizationTests(unittest.TestCase):
     """Every string comes from locales/; a missing key must degrade to English, never to a key name."""
 
@@ -962,7 +1004,9 @@ moa:
 
 
 def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
-                 changes=None, survey=None) -> dict:
+                 changes=None, survey=None, new=()) -> dict:
+    """A report shaped like the real one. Everything in `catalog` is baseline (seeded) unless it is
+    listed in `new` — otherwise every fixture would be flagged 🆕 and the marker would mean nothing."""
     models = {}
     for model, status in statuses.items():
         models[model] = {"model": model, "status": status, "ok_attempts": 2, "attempts": 2,
@@ -970,7 +1014,8 @@ def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
     return {"run_at": engine._now_iso(), "attempts": 2, "models": models, "survey": survey,
             "configured_in": {model: ["fallback_providers[0]"] for model in statuses},
             "catalog": list(catalog), "catalog_fetch_ok": fetch_ok,
-            "catalog_seen": {model: {"first_seen": engine._now_iso()} for model in catalog},
+            "catalog_seen": {model: {"first_seen": engine._now_iso(),
+                                     "seeded": model not in new} for model in catalog},
             "changes": changes or []}
 
 
@@ -1010,8 +1055,10 @@ class RenderTests(unittest.TestCase):
     def test_dead_and_added(self):
         report = _fake_report({"a": "ok", "b": "not_provisioned"})
         self.assertIn("b", render.render_dead(report))
-        # the fixture seeds catalog_seen with "now", so everything it knows is genuinely an arrival
-        self.assertIn("first seen", render.render_added(report))
+        # a fixture marked `new` is an arrival; the default baseline is not
+        arrival = _fake_report({"a": "ok"}, catalog=("a", "brand/new"), new=("brand/new",))
+        self.assertIn("brand/new", render.render_added(arrival))
+        self.assertIn("no new models", render.render_added(report))
         old = _fake_report({"a": "ok"})
         old["catalog_seen"] = {"a": {"first_seen": "2000-01-01T00:00:00+00:00"}}
         self.assertIn("no new models", render.render_added(old))

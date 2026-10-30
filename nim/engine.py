@@ -501,6 +501,8 @@ def added_ids(report: dict, days: float = 7.0) -> list[str]:
     for model, record in (report.get("catalog_seen") or {}).items():
         if live and model not in live:
             continue
+        if record.get("seeded"):
+            continue  # the install-day baseline is not an arrival
         try:
             first = datetime.fromisoformat(str(record.get("first_seen")).replace("Z", "+00:00"))
         except Exception:  # noqa: BLE001
@@ -590,7 +592,13 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
 
     previous_seen = previous.get("catalog_seen") or {}
     if not previous_seen:  # first run under this schema: seed from the catalog we just read
-        previous_seen = {model: {"first_seen": _now_iso()} for model in live_catalog}
+        # `seeded` marks the baseline. Without it every model is "first seen" on install day and the
+        # 🆕 marker would celebrate all 85 the moment you install the plugin.
+        previous_seen = {model: {"first_seen": _now_iso(), "seeded": True}
+                         for model in live_catalog}
+    elif not any(record.get("seeded") for record in previous_seen.values()):
+        for record in previous_seen.values():  # upgrade a state file written before this marker
+            record["seeded"] = True
 
     changes: list[str] = []
     history: dict[str, dict] = {}

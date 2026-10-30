@@ -32,6 +32,8 @@ MARKS = {"ok": "✓", "warn": "⚠", "dead": "✗"}
 # still appears where it is not redundant: the recommendation footer, for models with no benchmark.
 QUALITY_MARK = "🧠"
 SPEED_MARK = "⚡"
+NEW_MARK = "🆕"   # appeared in /v1/models within NEW_WINDOW_DAYS, and is not the install baseline
+NEW_WINDOW_DAYS = 7.0
 
 
 def plain(text: str) -> str:
@@ -201,13 +203,20 @@ def _roles(result: dict, used: dict[str, list[str]]) -> str:
     return short_where((used or {}).get(result["model"]) or [])
 
 
-def _line(result: dict, used: dict[str, list[str]], recommended: bool = False) -> str:
+def new_models(report: dict, days: float = NEW_WINDOW_DAYS) -> set[str]:
+    """Ids NVIDIA added recently — the arrivals nobody announces."""
+    return set(engine.added_ids(report, days))
+
+
+def _line(result: dict, used: dict[str, list[str]], recommended: bool = False,
+          new: set[str] | None = None) -> str:
     """One model, one line: mark, short name, then the facts, separated by middots.
 
     The recommended row says so in words and drops its config role: showing `★ … · shortlist` told
     the reader "candidate" next to the star, which contradicts the star. One row, one claim.
     """
-    bits = [bit for bit in (_quality_tag(result), _speed_tag(result),
+    fresh = NEW_MARK if new and result["model"] in new else ""
+    bits = [bit for bit in (fresh, _quality_tag(result), _speed_tag(result),
                             t("role.recommended") if recommended else _roles(result, used)) if bit]
     mark = "★" if recommended else MARKS.get(engine.severity(result), "·")
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
@@ -222,8 +231,9 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     # not always the top of the list, because a 40 s first byte is not a recommendation.
     pick = engine.recommended(report)
     pick_model = pick.get("model") if pick else None
+    new = new_models(report)
     for result in sorted(alive, key=engine.rank_key):
-        lines.append(_line(result, used, recommended=result["model"] == pick_model))
+        lines.append(_line(result, used, recommended=result["model"] == pick_model, new=new))
     for group in (warn, dead):
         if group:
             lines.append("")   # a blank line is cheaper than a header row
@@ -411,17 +421,22 @@ def render_board(report: dict, limit: int = 14) -> str:
     watched_only = set(mine) - routed
     pick = engine.recommended(watched(report))
     pick_model = pick.get("model") if pick else None
+    new = new_models(report)
 
     header = t("board.header", age=human_age(engine.scan_age_seconds({"run_at": survey.get("at")}))
                if survey else t("catalog.never_surveyed"), listed=len(catalog))
-    lines = [header, t("board.counts", chat=len(chat), utility=len(utility),
-                       offline=len(offline)), ""]
+    counts = t("board.counts", chat=len(chat), utility=len(utility), offline=len(offline))
+    if new:
+        counts += t("board.new_badge", count=len(new), days=f"{NEW_WINDOW_DAYS:g}")
+    lines = [header, counts, ""]
 
     if chat:
         lines.append(t("board.section_chat"))
         for model in chat[:limit]:
             verdict = alive[model]
             bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]
+            if model in new:
+                bits.insert(0, NEW_MARK)
             published = benchmarks.lookup(model)
             if published is not None:
                 bits.insert(0, f"{QUALITY_MARK}{published.index:g}"

@@ -145,6 +145,7 @@ board:
   offline_group: "  · {count} {why}"
   yours: "yours"
   watching: "watching"
+  new_badge: " · 🆕 {count} new in {days} days"
   hints: "/nim probe (your models only, fast) · /nim catalog (offline detail) · /nim json (all of it)"
 
 progress:

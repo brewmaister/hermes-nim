@@ -144,6 +144,7 @@ board:
   offline_group: "  · {count} {why}"
   yours: "tuyo"
   watching: "vigilado"
+  new_badge: " · 🆕 {count} nuevos en {days} días"
   hints: "/nim probe (solo tus modelos, rápido) · /nim catalog (detalle de caídos) · /nim json (todo)"
 
 progress:

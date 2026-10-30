@@ -21,7 +21,8 @@ from __future__ import annotations
 import logging
 import os
 
-from .nim.commands import handle_cli, setup_argparse, slash_command
+from .nim.commands import (handle_cli, setup_argparse, slash_command,
+                           slash_command_with_progress)
 from .nim.settings import configure as configure_settings
 from .nim.version import PLUGIN_VERSION
 
@@ -31,11 +32,19 @@ logger = logging.getLogger(__name__)
 def register(ctx) -> None:
     logger.info("hermes-nim %s loaded (pid %s)", PLUGIN_VERSION, os.getpid())
     configure_settings(ctx)
+    def _chat_command(raw_args: str = "", **kwargs):
+        """Bind the plugin context so the handler can say "measuring…" before a live probe.
+
+        The wrapper edits that one message with the result instead of leaving a dangling progress
+        line, and returns None in that case — the gateway then sends nothing further.
+        """
+        return slash_command_with_progress(ctx, raw_args, **kwargs)
+
     ctx.register_command(
         "nim",
-        handler=slash_command,
+        handler=_chat_command,
         description="NVIDIA NIM model health: what is alive, stalled, retired or new (hermes-nim)",
-        args_hint="[probe|catalog|dead|added|cfg|json|version|help]",
+        args_hint="[cached|probe|speed|catalog|dead|added|cfg|json|version|help]",
     )
     ctx.register_cli_command(
         name="nim",

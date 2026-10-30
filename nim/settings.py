@@ -24,6 +24,12 @@ class Settings:
     # ever look at models already in use and never surface a better one.
     shortlist: tuple[str, ...] = ("minimaxai/minimax-m3.1-flash", "meta/muse-glimmer-30b",
                                   "stepfun-ai/step-5-preview")
+    # `/nim` measures by default: a cached verdict with an age on it still needs the reader to do
+    # arithmetic about whether it means anything. `/nim cached` is the instant view.
+    live_default: bool = True
+    # Reuse a scan this young instead of probing again — a double-tap on /nim should not launch two
+    # full probes at the same model.
+    live_grace_seconds: float = 20.0
 
     def with_env(self) -> "Settings":
         """Env wins over config: cron scripts have no ctx, and ad-hoc runs need to override."""
@@ -42,6 +48,14 @@ class Settings:
                 pass
         if os.environ.get("NIM_STATE_DIR"):
             changes["state_dir"] = os.environ["NIM_STATE_DIR"]
+        if os.environ.get("NIM_LIVE"):
+            changes["live_default"] = os.environ["NIM_LIVE"].strip().lower() not in {
+                "0", "false", "no", "off"}
+        if os.environ.get("NIM_LIVE_GRACE"):
+            try:
+                changes["live_grace_seconds"] = max(0.0, float(os.environ["NIM_LIVE_GRACE"]))
+            except ValueError:
+                pass
         if os.environ.get("NIM_SHORTLIST"):
             changes["shortlist"] = tuple(
                 part.strip() for part in os.environ["NIM_SHORTLIST"].split(",") if part.strip())
@@ -56,6 +70,14 @@ def _as_float(value, fallback: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _as_bool(value, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return fallback
+    return str(value).strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _as_int(value, fallback: int) -> int:
@@ -89,6 +111,9 @@ def settings() -> Settings:
             state_dir=str(configured.get("state_dir") or ""),
             shortlist=tuple(
                 part.strip() for part in shortlist_raw.split(",") if part.strip()),
+            live_default=_as_bool(configured.get("live_default"), values.live_default),
+            live_grace_seconds=_as_float(configured.get("live_grace_seconds"),
+                                         values.live_grace_seconds),
         )
     return values.with_env()
 
@@ -101,7 +126,10 @@ def describe() -> str:
         f"· ttft_seconds: {current.ttft_seconds:g} (below 20 misreads cold starts as dead)\n"
         f"· attempts: {current.attempts}\n"
         f"· state_dir: {current.state_dir or '~/hermes-outputs/nim-probe'}\n"
-        f"· shortlist: {models}"
+        f"· shortlist: {models}\n"
+        f"· live_default: {current.live_default} "
+        f"(/nim probes on every call; /nim cached is the instant view)\n"
+        f"· live_grace_seconds: {current.live_grace_seconds:g} (reuse a scan younger than this)"
     )
 
 

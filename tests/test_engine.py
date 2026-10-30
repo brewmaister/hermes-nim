@@ -20,7 +20,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nim import engine, render, watch  # noqa: E402
+from nim import commands, engine, render, watch  # noqa: E402
 
 
 class FakeResponse(io.BytesIO):
@@ -399,6 +399,134 @@ class CredentialTests(unittest.TestCase):
         self.assertIn("a", text)
         self.assertNotIn("✗", text)
         self.assertIn("cannot measure", render.render_speed(report))
+
+
+class FakeHandle:
+    def __init__(self, ok=True, fail_edit=False):
+        self.ok = ok
+        self.edited = []
+        self._fail_edit = fail_edit
+
+    def edit(self, text):
+        if self._fail_edit:
+            raise RuntimeError("surface cannot edit")
+        self.edited.append(text)
+        return {"ok": True}
+
+
+class FakeCtx:
+    def __init__(self, handle=None, raises=False):
+        self.handle = handle
+        self.raises = raises
+        self.posted = []
+
+    def post_message(self, text):
+        if self.raises:
+            raise RuntimeError("no conversation bound")
+        self.posted.append(text)
+        return self.handle
+
+
+class LiveDefaultTests(unittest.TestCase):
+    """/nim measures by default; the cache is one word away and never slower than it was."""
+
+    def _settings(self, live=True, grace=20.0):
+        from nim import settings as settings_mod
+
+        return settings_mod.Settings(live_default=live, live_grace_seconds=grace)
+
+    def _fresh(self, **overrides):
+        from datetime import datetime, timezone
+
+        model = {"model": "a/x-30b", "status": "ok", "ok_attempts": 2, "attempts": 2,
+                 "ttft_s": 0.4, "severity": "ok", "trials": ["ok:0.4", "ok:0.4"]}
+        model.update(overrides)
+        return {"run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "attempts": 2, "models": {"a/x-30b": model}}
+
+    def test_default_verb_probes_when_the_cache_is_old(self):
+        stale = self._fresh()
+        stale["run_at"] = "2026-10-30T00:00:00+00:00"
+        with mock.patch.object(commands.settings, "settings", return_value=self._settings()), \
+                mock.patch.object(commands.engine, "load_state", return_value=stale), \
+                mock.patch.object(commands, "do_scan", return_value=self._fresh()) as scan:
+            text, code = commands.dispatch("", [])
+        scan.assert_called_once()
+        self.assertEqual(code, 0)
+        self.assertIn("just now", text)
+
+    def test_a_scan_younger_than_the_grace_is_reused(self):
+        with mock.patch.object(commands.settings, "settings", return_value=self._settings()), \
+                mock.patch.object(commands.engine, "load_state", return_value=self._fresh()), \
+                mock.patch.object(commands, "do_scan", side_effect=AssertionError("probed again")):
+            text, _ = commands.dispatch("", [])
+        self.assertIn("x-30b", text)
+
+    def test_cached_verb_never_touches_the_network(self):
+        with mock.patch.object(commands.settings, "settings", return_value=self._settings()), \
+                mock.patch.object(commands.engine, "load_state", return_value=self._fresh()), \
+                mock.patch.object(commands, "do_scan", side_effect=AssertionError("probed")):
+            text, _ = commands.dispatch("cached", [])
+        self.assertIn("ago", text.splitlines()[0])
+
+    def test_live_default_off_restores_the_old_behaviour(self):
+        with mock.patch.object(commands.settings,
+                               "settings", return_value=self._settings(live=False)), \
+                mock.patch.object(commands.engine, "load_state", return_value=self._fresh()), \
+                mock.patch.object(commands, "do_scan", side_effect=AssertionError("probed")):
+            text, _ = commands.dispatch("", [])
+        self.assertIn("ago", text.splitlines()[0])
+
+    def test_will_measure_matches_the_verbs(self):
+        with mock.patch.object(commands.settings, "settings", return_value=self._settings()):
+            self.assertTrue(commands.will_measure(""))
+            self.assertTrue(commands.will_measure("probe"))
+            self.assertTrue(commands.will_measure("speed"))
+            self.assertFalse(commands.will_measure("cached"))
+            self.assertFalse(commands.will_measure("catalog"))
+        with mock.patch.object(commands.settings,
+                               "settings", return_value=self._settings(live=False)):
+            self.assertFalse(commands.will_measure(""))
+
+
+class ProgressMessageTests(unittest.TestCase):
+    """A 20-40 s silence reads as a broken bot: say so first, then edit that message."""
+
+    def test_progress_note_is_replaced_by_the_report(self):
+        handle = FakeHandle()
+        ctx = FakeCtx(handle)
+        with mock.patch.object(commands.settings, "settings", return_value=LiveDefaultTests()._settings()), \
+                mock.patch.object(commands, "slash_command", return_value="🧠 NVIDIA NIM · just now"):
+            result = commands.slash_command_with_progress(ctx, "")
+        self.assertIsNone(result)                      # delivered in place, nothing extra sent
+        self.assertEqual(len(ctx.posted), 1)
+        self.assertIn("measuring", ctx.posted[0])
+        self.assertEqual(handle.edited, ["🧠 NVIDIA NIM · just now"])
+
+    def test_instant_verbs_post_nothing(self):
+        ctx = FakeCtx(FakeHandle())
+        with mock.patch.object(commands.settings, "settings", return_value=LiveDefaultTests()._settings()), \
+                mock.patch.object(commands, "slash_command", return_value="cached text"):
+            self.assertEqual(commands.slash_command_with_progress(ctx, "cached"), "cached text")
+        self.assertEqual(ctx.posted, [])
+
+    def test_a_refused_post_still_returns_the_text(self):
+        ctx = FakeCtx(FakeHandle(ok=False))
+        with mock.patch.object(commands.settings, "settings", return_value=LiveDefaultTests()._settings()), \
+                mock.patch.object(commands, "slash_command", return_value="report"):
+            self.assertEqual(commands.slash_command_with_progress(ctx, ""), "report")
+
+    def test_a_broken_editing_surface_still_returns_the_text(self):
+        ctx = FakeCtx(FakeHandle(fail_edit=True))
+        with mock.patch.object(commands.settings, "settings", return_value=LiveDefaultTests()._settings()), \
+                mock.patch.object(commands, "slash_command", return_value="report"):
+            self.assertEqual(commands.slash_command_with_progress(ctx, ""), "report")
+
+    def test_no_conversation_never_breaks_the_command(self):
+        ctx = FakeCtx(raises=True)
+        with mock.patch.object(commands.settings, "settings", return_value=LiveDefaultTests()._settings()), \
+                mock.patch.object(commands, "slash_command", return_value="report"):
+            self.assertEqual(commands.slash_command_with_progress(ctx, ""), "report")
 
 
 class BrandTests(unittest.TestCase):

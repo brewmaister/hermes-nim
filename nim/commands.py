@@ -13,7 +13,8 @@ import sys
 from . import engine, render, settings, version
 
 USAGE = (
-    "/nim — cached scan (instant)\n"
+    "/nim — live scan, now (measures every model; ~15-40 s)\n"
+    "/nim cached — the last scan, instantly, no network\n"
     "/nim probe — live scan of the models your config uses + the shortlist\n"
     "            (~30-60 s: a model that never answers costs two 25 s stalls)\n"
     "/nim catalog — what /v1/models lists, and what dropped out of it\n"
@@ -46,7 +47,9 @@ def _print(text: str) -> None:
 def _verb_and_rest(raw: str) -> tuple[str, list[str]]:
     pieces = [piece for piece in (raw or "").split() if piece]
     if not pieces:
-        return "cached", []
+        # Empty means "the default verb", and the default is now a live scan. Mapping it to
+        # "cached" here silently disabled the whole feature: /nim rendered the cache every time.
+        return "", []
     return pieces[0].lower(), pieces[1:]
 
 
@@ -107,6 +110,22 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
             return f"⚡ NVIDIA NIM speed — {report['error']}", 2
         return render.render_speed(report), 0
 
+    # `/nim` measures. A cached verdict needs the reader to judge whether "22 min ago" still means
+    # anything; the whole point of this plugin is the wire, so the default path uses it.
+    if verb in {"", "status", "live", "cached"}:
+        if verb == "cached" or not current.live_default:
+            return render.render_cached(engine.load_state(current.state_dir)), 0
+        cached = engine.load_state(current.state_dir)
+        age = engine.scan_age_seconds(cached)
+        if verb != "live" and cached.get("models") and age is not None \
+                and age < current.live_grace_seconds:
+            # A double-tap must not fire a second full probe: that scan is still about now.
+            return render.render_probe(cached), 0
+        report = do_scan()
+        if report.get("error"):
+            return f"🧠 NVIDIA NIM — {report['error']}", 2
+        return render.render_probe(report), 0
+
     report = None
     if force_scan or verb == "probe":
         report = do_scan()
@@ -142,16 +161,59 @@ def slash_command(raw_args: str = "", *, session_id: str = "", **_ignored) -> st
     return text
 
 
+def will_measure(verb: str) -> bool:
+    """Would this verb hit the network? Used to decide whether to say "measuring" first."""
+    current = settings.settings()
+    if verb in {"probe", "speed", "live"}:
+        return True
+    if verb in {"", "status"}:
+        return current.live_default
+    return False
+
+
+def measuring_note() -> str:
+    current = settings.settings()
+    models = len(engine.configured_models()) + len(current.shortlist_models())
+    return (f"⏳ NVIDIA NIM — measuring {models} models live "
+            f"({current.attempts}× each, up to {current.ttft_seconds:g}s per attempt)…")
+
+
+def slash_command_with_progress(ctx, raw_args: str = "", **kwargs) -> str | None:
+    """The chat door: say "measuring" first, then edit that same message with the result.
+
+    A live probe is 15-40 s of silence, and Telegram gives no spinner — silence that long reads as a
+    broken bot. Posting one line and editing it in place keeps the chat clean (no leftover
+    "measuring…" message) and works the same on a surface that cannot edit: then the note stays and
+    the report arrives as its own message.
+    """
+    verb, extra = _verb_and_rest(raw_args)
+    if not will_measure(verb):
+        return slash_command(raw_args, **kwargs)
+    handle = None
+    try:
+        handle = ctx.post_message(measuring_note())
+    except Exception:  # noqa: BLE001 - a progress note must never break the command
+        handle = None
+    text = slash_command(raw_args, **kwargs)
+    if handle is not None and getattr(handle, "ok", False):
+        try:
+            handle.edit(text)
+            return None   # already delivered, in place
+        except Exception:  # noqa: BLE001
+            pass
+    return text
+
+
 # ---------------------------------------------------------------------------- CLI door
 
 def setup_argparse(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "verb",
         nargs="?",
-        default="cached",
-        choices=["cached", "status", "probe", "speed", "catalog", "dead", "added", "cfg", "json",
-                 "watch", "version", "help"],
-        help="What to print (default: cached — the last scan, no network)",
+        default="",
+        choices=["", "live", "cached", "probe", "speed", "catalog", "dead", "added", "cfg", "json",
+                 "watch", "status", "version", "help"],
+        help="What to print (default: live scan; `cached` prints the last scan with no network)",
     )
     parser.add_argument("days", nargs="?", default=None,
                         help="For `added`: how many days back; for `speed`: how many attempts")
@@ -180,7 +242,7 @@ def handle_cli(args: argparse.Namespace) -> int:
     if getattr(args, "attempts", None) is not None:
         os.environ["NIM_ATTEMPTS"] = str(args.attempts)
 
-    verb = str(getattr(args, "verb", "cached") or "cached")
+    verb = str(getattr(args, "verb", "") or "")
     if verb == "watch":
         from .watch import run_watch
 

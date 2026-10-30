@@ -26,6 +26,24 @@ catalog: 85 listed · 85 tracked
 - **`hermes nim`** — the same engine from a shell, for scripts and cron (`--json` for machines).
 - **`scripts/nim-watch.py`** — the cron door: prints nothing unless something changed.
 
+### Realtime by default
+
+`/nim` measures. A cached verdict still asks the reader to decide whether "22 min ago" means
+anything, and the entire reason this plugin exists is that published metadata lies — so the default
+path goes to the wire.
+
+Two things make that bearable:
+
+- **The reply is posted before the wait.** The handler posts `⏳ NVIDIA NIM — measuring 7 models live
+  (2× each, up to 25s per attempt)…` and then *edits that same message* with the report, so there is
+  no 40-second silence and no leftover progress line.
+- **A scan younger than `live_grace_seconds` (20 s) is reused.** Double-tapping `/nim` does not fire
+  two full probes at the same model.
+
+`/nim cached` is the instant view, `live_default: false` puts the old behaviour back, and
+`NIM_LIVE=0` does it for one process. `hermes nim` follows the same default; `hermes nim cached` is
+the fast door for scripts.
+
 ### Why it looks like that
 
 - **One model, one line.** A phone gets ~40 characters before it wraps; the old lines were 95-110 and
@@ -90,7 +108,8 @@ happened can never read as success.
 
 | Command | What it does | Cost |
 |---|---|---|
-| `/nim` | cached scan (the last one, with its age) | instant |
+| `/nim` | **live scan — measures every model now** | ~15–40 s |
+| `/nim cached` | the last scan, with its age, no network | instant |
 | `/nim probe` | live scan: config models + shortlist | ~30–60 s |
 | `/nim speed [n]` | timed scan: first byte + full answer, median of n attempts (default 3) | ~15–40 s |
 | `/nim catalog` | what `/v1/models` lists, what dropped out | instant |

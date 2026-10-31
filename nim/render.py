@@ -216,7 +216,38 @@ def _row_score(model: str):
     return found
 
 
-def _quality_tag(result: dict) -> str:
+def _interval(model: str) -> tuple[float, float] | None:
+    """The published 95% interval for *model*, when its source gives one."""
+    found = _row_score(model)
+    if found is None or found.lower is None or found.upper is None:
+        return None
+    return float(found.lower), float(found.upper)
+
+
+def podium(models: list[str]) -> list[tuple[str, bool]]:
+    """Medal and tie flag per position, in list order.
+
+    A podium that ignores the published interval is decoration: 1431 (1428-1435) and 1430 (1424-1436)
+    are the same number, so giving them 🥈 and 🥉 claims a difference the source does not support.
+    Rows whose intervals overlap share the medal of the row above, and their number is prefixed with
+    `≈` so the sharing is visible rather than inferred. Competition ranking: 1, 1, 3.
+    """
+    medals: list[tuple[str, bool]] = []
+    holder: tuple[float, float] | None = None      # interval of the current medal holder
+    rank = -1
+    for index, model in enumerate(models):
+        interval = _interval(model)
+        tied = index > 0 and interval is not None and holder is not None \
+            and interval[0] <= holder[1] and holder[0] <= interval[1]
+        if not tied:
+            rank += 1
+            holder = interval
+        medal = MEDALS[rank] if 0 <= rank < len(MEDALS) else ""
+        medals.append((medal, tied))
+    return medals
+
+
+def _quality_tag(result: dict, tied: bool = False) -> str:
     """Source glyph + published score, or nothing at all."""
     from . import benchmarks as _benchmarks
 
@@ -230,7 +261,10 @@ def _quality_tag(result: dict) -> str:
         return ""
     # "family" is a claim about the number: it is the parent model's score, not this variant's.
     family = f" {t('quality.family')}" if published.inherited else ""
-    return _format_score(published) + family
+    tag = _format_score(published)
+    if tied:
+        tag = tag[:len(published.glyph)] + "≈" + tag[len(published.glyph):]
+    return tag + family
 
 
 def _write_tag(result: dict) -> str:
@@ -257,15 +291,15 @@ def new_models(report: dict, days: float = NEW_WINDOW_DAYS) -> set[str]:
 
 
 def _line(result: dict, used: dict[str, list[str]], medal: str | None = None,
-          new: set[str] | None = None) -> str:
+          new: set[str] | None = None, tied: bool = False) -> str:
     """One model, one line: mark, short name, then the facts, separated by middots.
 
     A medal row drops its config role — `🥇 … · shortlist` read as two contradictory claims about the
     same model. Position in the list is the ranking; the role belongs to the rows below the podium.
     """
     fresh = NEW_MARK if new and result["model"] in new else ""
-    bits = [bit for bit in (fresh, _quality_tag(result), _speed_tag(result), _write_tag(result),
-                            "" if medal else _roles(result, used)) if bit]
+    bits = [bit for bit in (fresh, _quality_tag(result, tied=tied), _speed_tag(result),
+                            _write_tag(result), "" if medal else _roles(result, used)) if bit]
     mark = medal or MARKS.get(engine.severity(result), "·")
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
 
@@ -278,9 +312,10 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     # then attempts-answered, then measured latency. Exactly one model carries the star — and it is
     # not always the top of the list, because a 40 s first byte is not a recommendation.
     new = new_models(report)
-    for position, result in enumerate(sorted(alive, key=engine.rank_key)):
-        medal = MEDALS[position] if position < len(MEDALS) else None
-        lines.append(_line(result, used, medal=medal, new=new))
+    ordered = sorted(alive, key=engine.rank_key)
+    seats = podium([str(result.get("model") or "") for result in ordered])
+    for result, (medal, tied) in zip(ordered, seats):
+        lines.append(_line(result, used, medal=medal or None, new=new, tied=tied))
     for group in (warn, dead):
         if group:
             lines.append("")   # a blank line is cheaper than a header row
@@ -518,7 +553,9 @@ def render_board(report: dict, limit: int = 14) -> str:
         # No coverage counters and no "sorted by" note: the glyph on each row already says which table
         # its number came from, and a section header is a label, not a provenance report.
         lines.append(t("board.section_chat"))
+        seats = podium(chat)
         for position, model in enumerate(chat[:limit]):
+            medal, tied = seats[position]
             verdict = alive[model]
             bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]
             write = _write_tag(verdict)
@@ -526,7 +563,7 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(write)
             if model in new:
                 bits.insert(0, NEW_MARK)
-            tag = _quality_tag({"model": model})
+            tag = _quality_tag({"model": model}, tied=tied)
             if tag:                       # never leave an empty "—  · " where a score would go
                 bits.insert(0, tag)
 
@@ -534,11 +571,11 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(t("board.yours"))
             elif model in watched_only:
                 bits.append(t("board.watching"))
-            elif position < len(MEDALS):
+            elif medal:
                 # A podium model you do not route to: using it is a config edit, not a switch, and a
                 # medal row must not hide that.
                 bits.append(t("board.pick_unconfigured"))
-            mark = MEDALS[position] if position < len(MEDALS) else MARKS["ok"]
+            mark = medal or MARKS["ok"]
             lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
         if len(chat) > limit:
             lines.append(t("foot.more", hidden=len(chat) - limit))
@@ -612,7 +649,12 @@ def render_scores(report: dict) -> str:
         scored += 1
         mark = t("scores.family") if found.inherited else t("scores.exact")
         costs = f" · ${found.cost:g}/task" if isinstance(found.cost, (int, float)) else ""
-        lines.append(f"{found.glyph} {short_model(model)} — {found.label[1:]} {mark} "
+        # The interval is the honest resolution of the number: two models 1 Elo apart with these
+        # bounds are the same model twice.
+        spread = (f" [{found.lower:.0f}–{found.upper:.0f}]"
+                  if isinstance(found.lower, (int, float)) and isinstance(found.upper, (int, float))
+                  else "")
+        lines.append(f"{found.glyph} {short_model(model)} — {found.label[1:]}{spread} {mark} "
                     f"({found.name}){costs}")
     lines += ["", t("scores.coverage", scored=scored, total=len(chat)),
               t("scores.source")]

@@ -75,6 +75,9 @@ class Score:
     inherited: bool       # True when this is a family match, not an exact one
     cost: float | None = None
     source: str = INDEX_SOURCE
+    lower: float | None = None      # published 95% interval, when the source gives one
+    upper: float | None = None
+    votes: int | None = None
 
     @property
     def glyph(self) -> str:
@@ -207,6 +210,23 @@ def _contains_either_way(candidate: set[str], tokens: set[str]) -> bool:
     return len(candidate) >= 2 and (candidate <= tokens or tokens <= candidate)
 
 
+def _arena_fields(row: dict) -> dict:
+    """The stored shape for one arena row, including the interval the leaderboard publishes.
+
+    `rating_lower`/`rating_upper` are a 95% interval, and they are the difference between a ranking
+    and a decoration: 1431 (1428-1435) and 1430 (1424-1436) are the same number with two labels.
+    """
+    def num(key: str) -> float | None:
+        value = row.get(key)
+        return float(value) if isinstance(value, (int, float)) else None
+
+    votes = row.get("vote_count")
+    return {"value": float(row.get("rating") or 0.0), "rank": int(row.get("rank") or 0),
+            "name": str(row.get("model_name") or ""), "org": str(row.get("organization") or ""),
+            "lower": num("rating_lower"), "upper": num("rating_upper"),
+            "votes": int(votes) if isinstance(votes, (int, float)) else None}
+
+
 def _arena_entry(rows: list[dict], bare: str) -> dict | None:
     """Best row for this id: exact normalised name first, then the closest word-set match."""
     tokens = _tokens(bare)
@@ -217,18 +237,12 @@ def _arena_entry(rows: list[dict], bare: str) -> dict | None:
         if not key:
             continue
         if key == name:
-            return {"value": float(row.get("rating") or 0.0), "rank": int(row.get("rank") or 0),
-                    "name": str(row.get("model_name") or ""),
-                    "org": str(row.get("organization") or ""), "inherited": False}
+            return {**_arena_fields(row), "inherited": False}
         candidate = _tokens(row.get("model_name"))
         if not _contains_either_way(candidate, tokens):
             continue
         if best is None or len(candidate & tokens) > best[0]:
-            best = (len(candidate & tokens), {"value": float(row.get("rating") or 0.0),
-                                     "rank": int(row.get("rank") or 0),
-                                     "name": str(row.get("model_name") or ""),
-                                     "org": str(row.get("organization") or ""),
-                                     "inherited": True})
+            best = (len(candidate & tokens), {**_arena_fields(row), "inherited": True})
     return best[1] if best else None
 
 
@@ -418,7 +432,8 @@ def lookup(model: str, cache: dict | None = None, *, source: str | None = None) 
             continue
         found, inherited = matched
         return Score(found["value"], found["rank"], found["name"], found["org"], published,
-                     inherited, cost_of(found), candidate)
+                     inherited, cost_of(found), candidate,
+                     found.get("lower"), found.get("upper"), found.get("votes"))
     return None
 
 

@@ -1268,6 +1268,27 @@ class RenderTests(unittest.TestCase):
         self.assertIn("🔴 b — stalled", text)
         self.assertIn("2 models", text)
 
+    def test_overlapping_intervals_share_a_medal(self):
+        """🥈 and 🥉 must not claim a gap the published interval does not support."""
+        from nim import scores as scores_module
+
+        cache = {"version": 4, "fetched_at": engine._now_iso(), "published": "2026-10-31",
+                 "count": 3, "models": {},
+                 "arena": {"published": "2026-10-31", "count": 3, "models": {
+                     "mone": {"value": 1431.0, "rank": 93, "name": "M One", "org": "x",
+                              "lower": 1428.0, "upper": 1435.0, "votes": 68611, "inherited": False},
+                     "mtwo": {"value": 1430.0, "rank": 95, "name": "M Two", "org": "x",
+                              "lower": 1424.0, "upper": 1436.0, "votes": 12066, "inherited": False},
+                     "mthree": {"value": 1200.0, "rank": 300, "name": "M Three", "org": "x",
+                                "lower": 1190.0, "upper": 1210.0, "votes": 9000,
+                                "inherited": False}}}}
+        with mock.patch.object(scores_module, "load", return_value=cache), \
+                mock.patch.object(engine, "primary_source", return_value="lmarena"):
+            seats = render.podium(["x/m-one", "x/m-two", "x/m-three"])
+        self.assertEqual(seats[0], ("🥇", False))
+        self.assertEqual(seats[1], ("🥇", True))     # interval overlaps → same step, marked ≈
+        self.assertEqual(seats[2], ("🥈", False))    # clear of both → next step
+
     def test_arena_leads_when_asked_to_order_by_it(self):
         """order_by decides both the list order and the star — they must never disagree."""
         report = _fake_report({"nvidia/nemotron-3-ultra-550b-a55b": "ok"}, catalog=(

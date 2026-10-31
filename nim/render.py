@@ -193,12 +193,35 @@ def _format_score(published) -> str:
     `🧠24.1` is the Hermes Index (0-100 agentic) and `🏛1431` is LMArena Elo. They are different
     measurements; the glyph is there so the reader knows which one they are looking at.
     """
-    return f"{published.glyph}{published.scaled}"
+    scaled = getattr(published, "scaled", None) or str(getattr(published, "label", ""))[1:]
+    return f"{published.glyph}{scaled}"
+
+
+def _row_score(model: str):
+    """The score a row shows: the leading table if it rates the model, else the other one.
+
+    Sorting by 🏛 while printing 🧠 produced rows that read as out of order to anyone checking the
+    numbers. One source drives order and display together; the other is the fallback, not a substitute.
+    """
+    from . import scores as _scores
+
+    leading = engine.primary_source()
+    found = _scores.lookup(model, source=leading)
+    if found is None:
+        found = _scores.lookup(model)
+    return found
 
 
 def _quality_tag(result: dict) -> str:
     """Source glyph + published score, or nothing at all."""
-    published = benchmarks.lookup(str(result.get("model") or ""))
+    from . import benchmarks as _benchmarks
+
+    found = _row_score(str(result.get("model") or ""))
+    published = None
+    if found is not None:
+        published = _benchmarks.Benchmark(index=found.value, label=found.name, context=None,
+                                          source=found.source, published=found.published,
+                                          inherited=found.inherited, cost=found.cost)
     if published is None:
         return ""
     # "family" is a claim about the number: it is the parent model's score, not this variant's.
@@ -275,12 +298,10 @@ def best_line(report: dict) -> str:
             return t("rec.none")
         return t("rec.none_slow", cap=f"{engine.RECOMMEND_MAX_TTFT_S:g}")
     model = str(pick.get("model") or "")
-    published = benchmarks.lookup(model)
+    published = _row_score(model)
     why: list[str] = []
     if published is not None:
         why.append(_format_score(published))
-        if published.context:
-            why.append(t("rec.ctx", ctx=human_ctx(published.context)))
     else:
         size = engine.params_from_id(model)
         if size is not None:
@@ -511,9 +532,7 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(write)
             if model in new:
                 bits.insert(0, NEW_MARK)
-            published = benchmarks.lookup(model)
-            if published is not None:
-                bits.insert(0, _quality_tag({"model": model}))
+            bits.insert(0, _quality_tag({"model": model}))
 
             if model in routed:
                 bits.append(t("board.yours"))
@@ -533,9 +552,7 @@ def render_board(report: dict, limit: int = 14) -> str:
             # not a rumour. Everything except the id comes from the same evidence as any other row.
             winner = str(pick.get("model") or "")
             outside = [f"{PICK_MARK} {short_model(winner)}"]
-            published = benchmarks.lookup(winner)
-            if published is not None:
-                outside.append(_quality_tag({"model": winner}))
+            outside.append(_quality_tag({"model": winner}))
             if pick.get("ttft_s") is not None:
                 outside.append(f"{SPEED_MARK}{pick.get('ttft_s')}s")
             write = _write_tag(pick)

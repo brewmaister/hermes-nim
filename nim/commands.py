@@ -253,14 +253,15 @@ def _dead(report: dict) -> list[dict]:
 # ---------------------------------------------------------------------------- slash command
 
 def slash_command(raw_args: str = "", *, session_id: str = "", **_ignored) -> str:
-    """The chat door: the same text, dressed for a surface that can render bold and monospace.
+    """The chat door.
 
-    `hermes nim` keeps the plain render — a terminal would show the escape backslashes — so formatting
-    is a property of the door, not of the content.
+    Decorated in standard markdown: the Telegram adapter converts every outbound message with
+    ``format_message()`` (``**bold**`` → MarkdownV2, everything else escaped). The CLI door keeps the
+    undecorated render because a terminal would print the asterisks.
     """
     verb, extra = _verb_and_rest(raw_args)
     text, _code = dispatch(verb, extra)
-    return render.markdown_v2(text)
+    return render.chat_markdown(text)
 
 
 def will_measure(verb: str) -> bool:

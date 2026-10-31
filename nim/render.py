@@ -46,39 +46,29 @@ NEW_MARK = "🆕"   # appeared in /v1/models within NEW_WINDOW_DAYS, and is not 
 NEW_WINDOW_DAYS = 7.0
 
 
-# Telegram's MarkdownV2 demands that every one of these be backslash-escaped, or the whole message is
-# rejected and the adapter silently resends it as plain text — which is why plugin output has looked
-# like unformatted text: the strings were never valid MarkdownV2 in the first place.
-MDV2_SPECIAL = "_*[]()~`>#+-=|{}.!"
+def chat_markdown(text: str) -> str:
+    """The chat door's decoration, in STANDARD markdown — the gateway escapes it on the way out.
 
-
-def _escape_mdv2(text: str) -> str:
-    return "".join(f"\\{char}" if char in MDV2_SPECIAL else char for char in text)
-
-
-def markdown_v2(text: str) -> str:
-    """The chat door's presentation: escape everything, then add the two emphases Telegram can show.
-
-    Heads are bold, the command column is a code span (monospace, and it keeps the column aligned on a
-    phone). Nothing else is decorated — a plain sentence with no emphasis is worth more than a rainbow.
-    Code spans are NOT escaped inside: MarkdownV2 treats their content literally, so an escape there
-    would print a backslash.
+    The Telegram adapter runs ``format_message()`` on every send: it converts ``**bold**`` and
+    `` `code` `` to MarkdownV2 and escapes everything else. Handing it MarkdownV2 instead means the
+    backslashes get escaped again and the reader sees ``\(\~30 s\)`` — which is exactly what happened
+    when this function tried to do the escaping itself.
     """
     lines: list[str] = []
     for raw in (text or "").splitlines():
         stripped = raw.strip()
         if stripped.startswith("▸") or stripped.endswith("— commands") or stripped.endswith("— comandos") \
                 or stripped in ("glyphs", "glifos"):
-            lines.append(f"*{_escape_mdv2(stripped)}*")
+            lines.append(f"**{stripped}**")
             continue
         # A single space joins a verb to /nim; the alignment padding is many, and swallowing it made
         # the first row read "/nim    measure" as one code span.
         found = re.match(r"(\s*)(/nim(?: [^\s<\[]+)?(?: (?:<[^>]+>|\[[^\]]+\]))?)(.*)$", raw)
         if found:
             indent, command, rest = found.groups()
-            lines.append(f"{indent}`{command}`{_escape_mdv2(rest)}")
+            lines.append(f"{indent}`{command}`{rest}")
             continue
-        lines.append(_escape_mdv2(raw))
+        lines.append(raw)
     return "\n".join(lines)
 
 

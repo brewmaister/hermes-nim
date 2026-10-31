@@ -977,20 +977,16 @@ class LocalizationTests(unittest.TestCase):
             i18n.reset_cache()
             self.assertIn("measure every listed model", commands.usage())
 
-    def test_the_chat_door_emits_valid_markdown_v2(self):
-        """Telegram silently resends as plain text when MarkdownV2 does not parse — escape or stay dull."""
-        from nim import render as render_module
-
-        formatted = render_module.markdown_v2(commands.usage())
-        self.assertIn("*▸ now*", formatted)                 # heads are bold
-        self.assertIn("`/nim cached`", formatted)           # the command column is monospace
-        self.assertIn("`/nim probe <model…>`", formatted)    # the placeholder rides in the code span
-        # every reserved character outside a code span must be backslash-escaped
-        outside = re.sub(r"`[^`]*`", "", formatted)
-        unescaped = re.findall(r"(?<!\\)[._~>#+=|{}\[\]()-]", outside.replace("*", ""))
-        self.assertEqual(unescaped, [], f"unescaped MarkdownV2 characters: {set(unescaped)}")
-        # the CLI door keeps plain text: a terminal would show the backslashes
-        self.assertNotIn("\\", commands.usage())
+    def test_the_chat_door_speaks_standard_markdown(self):
+        """`format_message()` on the way out converts **bold** and escapes the rest — so send that, not
+        MarkdownV2: pre-escaped text gets escaped twice and the reader sees backslashes."""
+        formatted = render.chat_markdown(commands.usage())
+        self.assertIn("**▸ now**", formatted)
+        self.assertIn("`/nim cached`", formatted)
+        self.assertNotIn("\\(", formatted)           # no pre-escaping: the adapter owns that
+        self.assertNotIn("\\~", formatted)
+        # the CLI door stays undecorated
+        self.assertNotIn("**", commands.usage())
 
     def test_missing_key_falls_back_to_english_not_to_the_key(self):
         from nim import i18n

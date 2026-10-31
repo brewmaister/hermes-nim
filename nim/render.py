@@ -433,12 +433,14 @@ def render_probe(report: dict) -> str:
                                board=board_badge(report))
     if measured != len(models):
         header += t("header.probe_subset", total=len(models))
+    full = report
     if probed:
-        # Only what this run measured, when it was asked for specific models.
+        # Only what this run measured, when it was asked for specific models. The footer still reads
+        # the whole board: "best for chat" is a comparison, and one model cannot be compared to itself.
         report = {**report, "models": {model: verdict for model, verdict in models.items()
                                        if model in set(probed)}}
     lines = [header, ""] + model_lines(report, medals=not probed) + changes_block(report)
-    lines += ["", best_line(report), _catalog_footnote(report)]
+    lines += ["", best_line(full), _catalog_footnote(full)]
     return "\n".join(lines)
 
 

@@ -499,6 +499,40 @@ def render_board(report: dict, limit: int = 14) -> str:
     return "\n".join(lines)
 
 
+def render_scores(report: dict) -> str:
+    """Where the 🧠 numbers come from, how old they are, and which models they cover.
+
+    The quality prior is fetched, so "is it current?" is answerable instead of assumed: publish date
+    (the publisher's), fetch age (ours), and the match each model got.
+    """
+    from . import scores
+
+    cache = scores.load()
+    if not cache:
+        return t("scores.none")
+    models = report.get("models") or {}
+    catalog = set(report.get("catalog") or [])
+    chat = [model for model in catalog
+            if (models.get(model) or {}).get("status") == "ok"
+            and engine.capability(model) == "chat"]
+    lines = [t("scores.title"),
+             t("scores.meta", published=cache.get("published") or "?",
+               age=f"{scores.age_hours(cache):.0f}", count=cache.get("count") or 0),
+             ""]
+    scored = 0
+    for model in sorted(chat, key=lambda m: (engine.rank_key(models[m]))):
+        found = scores.lookup(model, cache)
+        if found is None:
+            lines.append(f"· {short_model(model)} — {t('scores.absent')}")
+            continue
+        scored += 1
+        mark = t("scores.family") if found.inherited else t("scores.exact")
+        lines.append(f"🧠 {short_model(model)} — {found.elo:.0f} {mark} ({found.name})")
+    lines += ["", t("scores.coverage", scored=scored, total=len(chat)),
+              t("scores.source")]
+    return "\n".join(lines)
+
+
 def render_vendors(report: dict, limit: int = 14) -> str:
     """Who publishes what you can actually call — and how fast their models write.
 

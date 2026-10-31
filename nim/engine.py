@@ -698,6 +698,19 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         # models and would produce a fake RECOV storm once the key is fixed.
         return _credential_report(base, rejected, configured_dir)
 
+    if survey:
+        # The quality prior changes on a publisher's schedule, not ours: refresh it on the same sweep
+        # that measures the catalog, so a ranking is never made from a table nobody has updated.
+        try:
+            from . import scores
+            from .settings import settings as _settings
+
+            current = _settings()
+            if current.scores_refresh:
+                scores.maybe_refresh(max_age_hours=current.scores_max_age_hours)
+        except Exception:  # noqa: BLE001 - a stale prior must not fail a scan
+            pass
+
     if not catalog_first:
         live_catalog, owners = catalog_entries(base, resolved_key)
     else:

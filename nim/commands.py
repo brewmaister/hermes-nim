@@ -14,8 +14,8 @@ from . import engine, render, settings, version
 from .i18n import t
 
 # Help text is localized too: a user who reads /nim in Spanish should not get English help.
-USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "vendor", "survey", "dead", "added",
-              "cfg", "json", "legend", "tail")
+USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "vendor", "scores", "survey", "dead",
+              "added", "cfg", "json", "legend", "tail")
 
 
 def usage() -> str:
@@ -174,6 +174,8 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
         return render.render_catalog(report), 0
     if verb == "vendor":
         return render.render_vendors(report), 0
+    if verb == "scores":
+        return render.render_scores(report), 0
     if verb == "survey":
         surveyed = do_survey()
         if surveyed.get("error"):
@@ -261,8 +263,8 @@ def setup_argparse(parser: argparse.ArgumentParser) -> None:
         "verb",
         nargs="?",
         default="",
-        choices=["", "live", "cached", "probe", "speed", "catalog", "vendor", "survey", "dead",
-                 "added", "cfg", "json", "watch", "status", "version", "help"],
+        choices=["", "live", "cached", "probe", "speed", "catalog", "vendor", "scores", "survey",
+                 "dead", "added", "cfg", "json", "watch", "status", "version", "help"],
         help="What to print (default: live scan; `cached` prints the last scan with no network)",
     )
     parser.add_argument("days", nargs="?", default=None,

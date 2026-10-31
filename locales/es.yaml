@@ -131,6 +131,7 @@ usage:
   speed: "/nim speed [n] — escaneo cronometrado: primer byte y respuesta completa, mediana de n intentos (3 por defecto)"
   catalog: "/nim catalog — el tablero en línea/caído: lo que NVIDIA lista vs lo que responde"
   vendor: "/nim vendor — quién publica lo que responde, con latencia y velocidad medianas"
+  scores: "/nim scores — de dónde salen los números 🧠, su antigüedad y qué modelos cubren"
   survey: "/nim survey — mide todos los modelos listados ahora (~1 min); el vigilante de 6h también"
   dead: "/nim dead — todo lo que no sirve ahora"
   added: "/nim added [días] — modelos que aparecieron recientemente (7 por defecto)"
@@ -158,6 +159,16 @@ util:
   moderation: "moderación"
   classif: "clasificador"
   translat: "traducción"
+
+scores:
+  title: "NVIDIA NIM · prior de calidad"
+  meta: "tabla publicada el {published} · obtenida hace {age}h · {count} modelos clasificados"
+  exact: "exacto"
+  family: "coincidencia de familia"
+  absent: "sin puntuación publicada"
+  coverage: "🧠 {scored} de {total} modelos de chat en línea tienen puntuación publicada"
+  source: "fuente: dataset público del leaderboard de LMArena (datasets-server.huggingface.co), se actualiza en /nim survey"
+  none: "NVIDIA NIM · prior de calidad — nada en caché todavía; /nim survey descarga el leaderboard de LMArena"
 
 vendor:
   title: "NVIDIA NIM · proveedores"
@@ -197,4 +208,5 @@ settings:
   recheck: "· recheck_ttft_seconds: {value} (a un modelo ya marcado como caído solo se le pide un byte durante este tiempo; 0 = usar ttft_seconds)"
   live_attempts: "· live_attempts: {value} (para /nim interactivo; /nim probe usa {attempts})"
   survey: "· survey_catalog: {value} (cada /nim mide todos los modelos listados; {workers} en paralelo, tope {cap}s)"
+  scores: "· scores_refresh: {value} (un survey vuelve a descargar el leaderboard de LMArena si la caché tiene más de {hours}h)"
   language: "· language: {value} (auto sigue display.language; incluye en/es)"

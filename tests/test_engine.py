@@ -22,6 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nim import commands, engine, i18n, render, watch  # noqa: E402
 
+# A survey refreshes the quality prior from the network. The suite must not, so the fetch is stubbed
+# for the whole module: tests that care about scoring use `install_scores()` explicitly.
+mock.patch("nim.scores.maybe_refresh", return_value=None).start()
+
 
 class FakeResponse(io.BytesIO):
     """Enough of an http.client response for both SSE iteration and json.load()."""
@@ -164,9 +168,11 @@ class RankTests(unittest.TestCase):
                 "attempts": attempts, "ttft_s": ttft, "trials": []}
 
     def test_bigger_model_ranks_first_despite_slower(self):
+        """No leaderboard at all: the size prior is what is being tested, nothing else."""
         big = self._result("nvidia/nemotron-3-ultra-550b-a55b", ttft=2.0)
         small = self._result("openai/gpt-oss-20b", ttft=0.2)
-        ordered = sorted([small, big], key=engine.rank_key)
+        with mock.patch("nim.scores.load", return_value=None):
+            ordered = sorted([small, big], key=engine.rank_key)
         self.assertEqual(ordered[0]["model"], big["model"])
 
     def test_unknown_size_sorts_last_and_is_not_guessed(self):
@@ -199,7 +205,8 @@ class RankTests(unittest.TestCase):
             report["models"][model]["attempts"] = 2
             report["models"][model]["ok_attempts"] = 2
             report["models"][model]["ttft_s"] = 0.5
-        text = render.render_cached(report)
+        with install_scores():
+            text = render.render_cached(report)
         # one line per model, org prefix dropped, the top pick marked with a star
         first_model = next(line for line in text.splitlines() if line.startswith("⭐"))
         # minimax carries a published AA index (29) and nemotron a lower one (23), so the published
@@ -222,27 +229,67 @@ class BenchmarkPriorTests(unittest.TestCase):
                      "attempts": 2, "ttft_s": 4.0, "trials": []}
         bigger = {"model": "nvidia/nemotron-3-ultra-550b-a55b", "status": "ok",
                   "ok_attempts": 2, "attempts": 2, "ttft_s": 0.5, "trials": []}
-        ordered = sorted([bigger, published], key=engine.rank_key)
+        with install_scores():
+            ordered = sorted([bigger, published], key=engine.rank_key)
         self.assertEqual(ordered[0]["model"], published["model"])
-        # and the bigger model still outranks a smallest one with no published score
+        # and the bigger model still outranks a scored one from further down the leaderboard
         small = {"model": "openai/gpt-oss-20b", "status": "ok", "ok_attempts": 2,
                  "attempts": 2, "ttft_s": 0.2, "trials": []}
-        self.assertEqual(sorted([small, bigger], key=engine.rank_key)[0]["model"], bigger["model"])
+        with install_scores():
+            self.assertEqual(sorted([small, bigger], key=engine.rank_key)[0]["model"], bigger["model"])
 
     def test_inherited_scores_are_labelled_as_inherited(self):
         from nim import benchmarks
 
-        flash = benchmarks.lookup("minimaxai/minimax-m3.1-flash")
-        self.assertIsNotNone(flash)
-        self.assertTrue(flash.inherited)
-        self.assertIn("family", benchmarks.describe("minimaxai/minimax-m3.1-flash"))
-        self.assertFalse(benchmarks.lookup("nvidia/nemotron-3-ultra-550b-a55b").inherited)
+        with install_scores():
+            flash = benchmarks.lookup("minimaxai/minimax-m3.1-flash")
+            self.assertIsNotNone(flash)
+            self.assertTrue(flash.inherited)
+            self.assertIn("family", benchmarks.describe("minimaxai/minimax-m3.1-flash"))
+            self.assertFalse(benchmarks.lookup("nvidia/nemotron-3-ultra-550b-a55b").inherited)
 
     def test_unknown_models_get_no_score(self):
         from nim import benchmarks
 
-        self.assertIsNone(benchmarks.lookup("meta/muse-glimmer-30b"))
-        self.assertEqual(benchmarks.describe("meta/muse-glimmer-30b"), "")
+        with install_scores():
+            self.assertIsNone(benchmarks.lookup("meta/muse-glimmer-30b"))
+            self.assertEqual(benchmarks.describe("meta/muse-glimmer-30b"), "")
+
+    def test_the_prior_is_fetched_not_typed(self):
+        """The old table was three hardcoded entries. The cache is now the only source."""
+        from nim import scores
+
+        cache = scores.build_cache([
+            {"model_name": "MiniMax M3", "organization": "minimaxai", "rating": 1487.0,
+             "rank": 5, "leaderboard_publish_date": "2026-10-30"},
+            {"model_name": "GPT-OSS 20B", "organization": "openai", "rating": 1310.0,
+             "rank": 40, "leaderboard_publish_date": "2026-10-30"},
+        ])
+        self.assertEqual(cache["published"], "2026-10-30")
+        self.assertEqual(cache["count"], 2)
+        exact = scores.lookup("openai/gpt-oss-20b", cache)
+        self.assertEqual(exact.elo, 1310.0)
+        self.assertFalse(exact.inherited)
+        family = scores.lookup("minimaxai/minimax-m3.1-flash", cache)
+        self.assertTrue(family.inherited)          # family rating, and it says so
+        self.assertIsNone(scores.lookup("poolside/laguna-xs-2.1", cache))
+
+    def test_a_failed_fetch_keeps_the_last_cache(self):
+        from nim import scores
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(scores, "cache_path", return_value=Path(tmp) / "scores.json"), \
+                mock.patch.object(scores, "fetch_rows", side_effect=OSError("offline")):
+            Path(tmp, "scores.json").write_text(json.dumps(ARENA_FIXTURE))
+            refreshed = scores.refresh(force=True)
+        self.assertEqual(refreshed["count"], ARENA_FIXTURE["count"])   # stale beats empty
+
+    def test_no_cache_means_no_scores_at_all(self):
+        from nim import scores
+
+        with mock.patch.object(scores, "load", return_value=None):
+            self.assertIsNone(scores.lookup("openai/gpt-oss-20b"))
+            self.assertEqual(scores.coverage(["a/b", "c/d"]), (0, 2))
 
     def test_recommendation_is_gated_on_speed_not_just_rank(self):
         slow = {"model": "minimaxai/minimax-m3.1-flash", "status": "ok", "ok_attempts": 2,
@@ -566,8 +613,9 @@ class EmojiFormatTests(unittest.TestCase):
         }}
 
     def test_marks_carry_the_meaning(self):
-        text = render.render_cached(self._report())
-        self.assertIn("🧠29 family", text)          # published index, inherited family score
+        with install_scores():
+            text = render.render_cached(self._report())
+        self.assertIn("🧠1487 family", text)        # published Elo, inherited family score
         self.assertIn("⚡0.41s", text)              # measured first byte
         # a model with no published score gets no 🧠 — the glyph is never filled in with a guess
         lightning = next(line for line in text.splitlines() if "lightning" in line)
@@ -639,12 +687,13 @@ class EmojiFormatTests(unittest.TestCase):
             self.assertNotIn("`", text)
 
     def test_plain_strips_the_emphasis_for_terminals(self):
-        text = render.render_cached(self._report())
+        with install_scores():
+            text = render.render_cached(self._report())
         flat = render.plain(text)
         self.assertNotIn("**", flat)
         self.assertIn(i18n.BOLD_BRAND + " · ", flat)
         # the glyphs survive: they are content, not decoration
-        self.assertIn("🧠29", flat)
+        self.assertIn("🧠1487", flat)
 
 
 class CapabilityTests(unittest.TestCase):
@@ -671,7 +720,8 @@ class CapabilityTests(unittest.TestCase):
                                "yi-large": "not_provisioned",
                                "nvidia/nemotron-parse": "not_provisioned"},
                               catalog=ids, survey=survey)
-        text = render.render_board(report)
+        with install_scores():
+            text = render.render_board(report)
         self.assertIn("🟢 1 chat · 🛠 1 · 🔴 2 offline", text)      # stats line
         self.assertEqual(text.splitlines()[0], "NVIDIA NIM")        # title on its own line
         self.assertNotIn("🏢", text)                                 # vendors live in /nim vendor
@@ -707,11 +757,12 @@ class CapabilityTests(unittest.TestCase):
         ids = ("nvidia/nemotron-3-ultra-550b-a55b", "meta/muse-glimmer-30b",
                "poolside/laguna-xs-2.1")
         report = _fake_report({model: "ok" for model in ids}, catalog=ids, survey=survey)
-        text = render.render_board(report)
+        with install_scores():
+            text = render.render_board(report)
         self.assertIn("🧠 1/3 published", text)
         score = next(line for line in text.splitlines() if "nemotron-3-ultra" in line)
         plain = next(line for line in text.splitlines() if "muse-glimmer" in line)
-        self.assertIn("🧠23", score)
+        self.assertIn("🧠1443", score)
         self.assertNotIn("🧠", plain)             # no score, and no fake one either
         self.assertNotIn("30B ·", plain)          # the id already says 30b; the row does not repeat it
 
@@ -923,12 +974,13 @@ class LocalizationTests(unittest.TestCase):
 
         # minimax-m3.1-flash inherits its index from the M3 family, so it carries the tag
         report = _fake_report({"minimaxai/minimax-m3.1-flash": "ok"})
-        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
-            i18n.reset_cache()
-            self.assertIn("familia", render.render_cached(report))
-        with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
-            i18n.reset_cache()
-            self.assertIn("family", render.render_cached(report))
+        with install_scores():
+            with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
+                i18n.reset_cache()
+                self.assertIn("familia", render.render_cached(report))
+            with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
+                i18n.reset_cache()
+                self.assertIn("family", render.render_cached(report))
 
     def test_every_english_key_exists_in_every_shipped_language(self):
         from nim import i18n
@@ -1121,6 +1173,30 @@ moa:
                 "  - model: z/not-nvidia\n    provider: other\n")
         found = engine._configured_models_without_yaml(text)
         self.assertEqual(sorted(found), ["nvidia/a"])
+
+
+ARENA_FIXTURE = {
+    "version": 1,
+    "fetched_at": "2026-10-30T00:00:00+00:00",
+    "source": "test",
+    "published": "2026-10-30",
+    "count": 3,
+    "models": {
+        "minimaxm3": {"elo": 1487.0, "rank": 5, "name": "MiniMax M3", "org": "minimaxai",
+                      "published": "2026-10-30"},
+        "nemotron3ultra550ba55b": {"elo": 1443.0, "rank": 9, "name": "Nemotron 3 Ultra 550B A55B",
+                                   "org": "nvidia", "published": "2026-10-30"},
+        "gptoss20b": {"elo": 1310.0, "rank": 40, "name": "GPT-OSS 20B", "org": "openai",
+                      "published": "2026-10-30"},
+    },
+}
+
+
+def install_scores(cache=None):
+    """Point the quality prior at a fixed leaderboard: tests must not depend on a network fetch."""
+    from nim import scores
+
+    return mock.patch.object(scores, "load", return_value=cache or ARENA_FIXTURE)
 
 
 def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,

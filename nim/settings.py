@@ -51,6 +51,10 @@ class Settings:
     # that black-holes for 25 s is unusable in chat whether or not a second attempt agrees. The
     # hysteresis still needs two *runs* before anything is called dead, so this cannot fake a death.
     live_attempts: int = 1
+    # The quality prior is fetched, not typed: a survey refreshes the LMArena leaderboard when the
+    # cache is older than scores_max_age_hours. False pins whatever is cached and stops the fetch.
+    scores_refresh: bool = True
+    scores_max_age_hours: float = 24.0
     # "auto" follows NIM_LANGUAGE → HERMES_LANGUAGE → display.language; or pin "en"/"es".
     language: str = "auto"
 
@@ -206,6 +210,7 @@ def describe() -> str:
         t("settings.live_attempts", value=current.live_attempts, attempts=current.attempts),
         t("settings.survey", value=current.survey_catalog, workers=current.survey_workers,
           cap=f"{current.survey_ttft_seconds:g}"),
+        t("settings.scores", value=current.scores_refresh, hours=f"{current.scores_max_age_hours:g}"),
         t("settings.language", value=current.language),
     ]
     return "\n".join(lines)

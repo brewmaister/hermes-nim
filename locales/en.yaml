@@ -132,6 +132,7 @@ usage:
   speed: "/nim speed [n] — timed scan: first byte and full answer, median of n attempts (default 3)"
   catalog: "/nim catalog — the online/offline board: what NVIDIA lists vs what answers"
   vendor: "/nim vendor — who publishes what answers, with median latency and writing speed"
+  scores: "/nim scores — where the 🧠 numbers come from, how old they are, and which models they cover"
   survey: "/nim survey — measure every listed model now (~1 min); the 6h watchdog does this too"
   dead: "/nim dead — everything currently unusable"
   added: "/nim added [days] — models that appeared recently (default 7)"
@@ -159,6 +160,16 @@ util:
   moderation: "moderation"
   classif: "classifier"
   translat: "translation"
+
+scores:
+  title: "NVIDIA NIM · quality prior"
+  meta: "leaderboard published {published} · fetched {age}h ago · {count} ranked models cached"
+  exact: "exact"
+  family: "family match"
+  absent: "no published score"
+  coverage: "🧠 {scored} of {total} online chat models have a published score"
+  source: "source: LMArena public leaderboard dataset (datasets-server.huggingface.co), refreshed by /nim survey"
+  none: "NVIDIA NIM · quality prior — nothing cached yet; /nim survey fetches the LMArena leaderboard"
 
 vendor:
   title: "NVIDIA NIM · vendors"
@@ -198,4 +209,5 @@ settings:
   recheck: "· recheck_ttft_seconds: {value} (a model already marked dead is only asked for a byte for this long; 0 = use ttft_seconds)"
   live_attempts: "· live_attempts: {value} (interactive /nim; /nim probe uses {attempts})"
   survey: "· survey_catalog: {value} (every /nim measures all listed models; {workers} workers, {cap}s cap)"
+  scores: "· scores_refresh: {value} (a survey refetches the LMArena leaderboard when the cache is older than {hours}h)"
   language: "· language: {value} (auto follows display.language; en/es shipped)"

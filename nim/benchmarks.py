@@ -1,102 +1,68 @@
-"""Published quality scores, kept deliberately small and dated.
+"""The quality prior — a compatibility surface over `nim.scores`, which fetches it.
 
-Why a static table and not a live lookup: NIM exposes no benchmarks and no metadata beyond
-`id`/`owned_by`, so any quality prior has to come from somewhere outside the API. This is that
-somewhere — and it is *external published evidence*, not something this plugin measured. Every entry
-names its source and the date it was read, because a stale benchmark silently becomes a lie.
+History worth keeping: this module used to hold a hand-typed table of three Artificial Analysis
+scores, under the rule "only add a score you can point at". The rule was right; the maintenance model
+was not. A typed table is accurate on the day it is written and silently stale afterwards — no update
+path, no date check, nothing to notice when a model was re-rated or withdrawn.
 
-Rules for this file:
+It is now mechanical: `nim.scores` pulls LMArena's public leaderboard dataset (a server-filtered JSON
+API), caches it with a fetch timestamp, and refreshes on a schedule. What remains non-mechanical is the
+id → arena-name match, which is why every prefix match is flagged `inherited`.
 
-1. **Only add a score you can point at.** No interpolation, no "this is probably about the same as
-   its predecessor".
-2. **Family matches must say so.** `minimaxai/minimax-m3` covers the M3 line; a variant with no
-   published score of its own inherits the family number *and is labelled as inherited*, so nobody
-   reads "29" as a measurement of the Flash variant.
-3. **Id-size fallback stays.** A model with no entry still ranks by the parameter count in its id —
-   a weak prior, but an honest one, and better than pretending every unlisted model is equal.
-
-Artificial Analysis Intelligence Index, read 2026-10-30:
-https://artificialanalysis.ai/models/comparisons/nvidia-nemotron-3-ultra-550b-a55b-vs-minimax-m3
+Two scales are never mixed. This module reports LMArena Elo only; the old AA index is gone rather than
+kept alongside, because a column of numbers drawn from two sources is a lie about comparability.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-AS_OF = "2026-10-30"
+from . import scores
+
+SOURCE = scores.SOURCE
 
 
 @dataclass(frozen=True)
 class Benchmark:
-    index: float          # Artificial Analysis Intelligence Index
-    label: str            # what the number actually measures, in the user's words
-    context: int | None   # published context window, tokens
+    index: float          # LMArena Elo, overall text leaderboard
+    label: str            # the arena's own name for the model, so a match can be judged
+    context: int | None   # LMArena publishes no context window; kept for interface compatibility
     source: str
     inherited: bool = False  # True when the score is the family's, not this exact variant's
 
 
-# Prefix-matched, longest prefix wins. Keep entries in descending specificity.
-_TABLE: tuple[tuple[str, Benchmark], ...] = (
-    (
-        "minimaxai/minimax-m3.1",
-        Benchmark(
-            index=29,
-            label="MiniMax-M3 family score (M3.1-Flash variant not published separately)",
-            context=1_000_000,
-            source="artificialanalysis.ai/models/comparisons/"
-                   "nvidia-nemotron-3-ultra-550b-a55b-vs-minimax-m3",
-            inherited=True,
-        ),
-    ),
-    (
-        "minimaxai/minimax-m3",
-        Benchmark(
-            index=29,
-            label="MiniMax-M3",
-            context=1_000_000,
-            source="artificialanalysis.ai/models/comparisons/"
-                   "nvidia-nemotron-3-ultra-550b-a55b-vs-minimax-m3",
-        ),
-    ),
-    (
-        "nvidia/nemotron-3-ultra",
-        Benchmark(
-            index=23,
-            label="Nemotron 3 Ultra 550B A55B (Reasoning)",
-            context=262_144,
-            source="artificialanalysis.ai/models/nvidia-nemotron-3-ultra-550b-a55b",
-        ),
-    ),
-)
+def as_of() -> str:
+    """The leaderboard's publish date — not our fetch date. Empty when nothing is cached."""
+    cache = scores.load() or {}
+    return str(cache.get("published") or "")
 
 
 def lookup(model: str) -> Benchmark | None:
-    """The published score for *model*, or None when nothing here covers it."""
-    if not model:
+    """The arena rating for *model*, or None when nothing published covers it."""
+    found = scores.lookup(model)
+    if found is None:
         return None
-    best: tuple[str, Benchmark] | None = None
-    for prefix, benchmark in _TABLE:
-        if model.startswith(prefix) and (best is None or len(prefix) > len(best[0])):
-            best = (prefix, benchmark)
-    return best[1] if best else None
+    return Benchmark(index=found.elo, label=found.name, context=None, source=SOURCE,
+                     inherited=found.inherited)
 
 
 def quality(model: str) -> float | None:
-    """Comparable quality number: the published index, or None to fall back on id size."""
+    """Comparable quality number: the Elo, or None to fall back on id size."""
     found = lookup(model)
     return found.index if found else None
 
 
 def describe(model: str) -> str:
-    """A short, honest tag for the model's line: `AA 29` or nothing at all."""
+    """A short, honest tag for the model's line: `arena 1487` or nothing at all."""
     found = lookup(model)
     if found is None:
         return ""
-    return f"AA {found.index:g}{' family' if found.inherited else ''}"
+    return f"arena {found.index:.0f}{' family' if found.inherited else ''}"
 
 
 def known_models() -> list[str]:
-    return [prefix for prefix, _ in _TABLE]
+    cache = scores.load() or {}
+    return sorted((cache.get("models") or {}).keys())
 
 
-__all__ = ["AS_OF", "Benchmark", "lookup", "quality", "describe", "known_models"]
+__all__ = ["Benchmark", "SOURCE", "as_of", "lookup", "quality", "describe", "known_models"]

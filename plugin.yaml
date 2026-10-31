@@ -1,5 +1,5 @@
 name: hermes-nim
-version: "0.0.20.0"
+version: "0.0.21.0"
 manifest_version: 2
 api_version: 1
 description: "NVIDIA NIM model health in chat: /nim reports which NIM models are alive, stalled, retired or newly arrived, because NVIDIA publishes none of it. `hermes nim` is the same engine for scripts and cron."
@@ -62,6 +62,14 @@ config_schema:
     type: number
     default: 1
     description: "Attempts per model for the interactive /nim (one keeps the worst case at a single stall cap; /nim probe still uses `attempts`). Hysteresis still needs two consecutive runs before anything is called dead, so a single sample cannot fake a death."
+  scores_refresh:
+    type: boolean
+    default: true
+    description: "A survey refetches the LMArena leaderboard (public dataset, cached to disk) when the cache is stale. The quality prior is fetched, never typed."
+  scores_max_age_hours:
+    type: number
+    default: 24
+    description: "How old the cached leaderboard may get before a survey refetches it."
   language:
     type: string
     default: "auto"

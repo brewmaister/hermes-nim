@@ -445,7 +445,11 @@ def render_board(report: dict, limit: int = 14) -> str:
     routed = {model for model, where in mine.items()
               if any(path != "shortlist" for path in where)}
     watched_only = set(mine) - routed
-    pick = engine.recommended(watched(report))
+    # The star answers "what should I point Hermes at", not "what am I already pointing it at": a
+    # model outside config can win, and then the line says so. Restricting the pool to config made the
+    # star a medal for your own shortlist — it kept landing on the fastest model you already had, even
+    # when a scored one was sitting right there unconfigured.
+    pick = engine.recommended(report)
     pick_model = pick.get("model") if pick else None
     new = new_models(report)
 
@@ -478,10 +482,30 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(t("board.yours"))
             elif model in watched_only:
                 bits.append(t("board.watching"))
+            elif model == pick_model:
+                # The winner is not in your config: that is the one thing a star row must not hide,
+                # because using it is a config edit, not a switch.
+                bits.append(t("board.pick_unconfigured"))
             mark = PICK_MARK if model == pick_model else MARKS["ok"]
             lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
         if len(chat) > limit:
             lines.append(t("foot.more", hidden=len(chat) - limit))
+        if (pick is not None and pick_model not in set(chat)
+                and pick_model in set(report.get("catalog") or [])):
+            # Named even though it is not yours: an unconfigured winner is a one-line config change,
+            # not a rumour. Everything except the id comes from the same evidence as any other row.
+            winner = str(pick.get("model") or "")
+            outside = [f"{PICK_MARK} {short_model(winner)}"]
+            published = benchmarks.lookup(winner)
+            if published is not None:
+                outside.append(_quality_tag({"model": winner}))
+            if pick.get("ttft_s") is not None:
+                outside.append(f"{SPEED_MARK}{pick.get('ttft_s')}s")
+            write = _write_tag(pick)
+            if write:
+                outside.append(write)
+            outside.append(t("board.pick_unconfigured"))
+            lines.append(" — ".join([outside[0], " · ".join(outside[1:])]))
     if utility:
         # one per line: a comma-separated run of ids is a paragraph you have to decode, not a list
         lines += ["", t("board.section_utility")]

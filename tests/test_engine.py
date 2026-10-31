@@ -1266,6 +1266,23 @@ class RenderTests(unittest.TestCase):
         self.assertIn("🔴 b — stalled", text)
         self.assertIn("2 models", text)
 
+    def test_the_star_may_point_outside_your_config(self):
+        """A scored model you do not route to still wins the star — named, with the cost of using it."""
+        report = _fake_report({
+            "nvidia/nemotron-3.5-super-vl-120b-a12b": "ok",     # scored 24.1 in the fixture
+            "nvidia/nemotron-3-ultra-550b-a55b": "ok",          # unscored, the one you route to
+        }, catalog=("nvidia/nemotron-3.5-super-vl-120b-a12b", "nvidia/nemotron-3-ultra-550b-a55b"))
+        report["configured_in"] = {"nvidia/nemotron-3-ultra-550b-a55b": ["fallback_providers[0]"]}
+        with install_scores():
+            text = render.render_board(report)
+        # the scored model wins even though the config points elsewhere...
+        self.assertIn("⭐️ nemotron-3.5-super-vl-120b-a12b — 🧠24.1 family", text)
+        # ...and the star row says that using it means editing config
+        star_row = next(line for line in text.splitlines() if line.startswith("⭐️"))
+        self.assertIn("not in config", star_row)
+        # the model you do route to is still listed, just without the star
+        self.assertIn("· nemotron-3-ultra-550b-a55b", text)
+
     def test_a_stale_scan_says_so_in_the_header(self):
         from datetime import datetime, timedelta, timezone
 

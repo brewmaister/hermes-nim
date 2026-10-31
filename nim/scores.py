@@ -89,6 +89,19 @@ class Score:
         return f"{self.glyph}{self.value:.1f}" if self.source == INDEX_SOURCE else f"{self.glyph}{self.value:.0f}"
 
 
+def _age_days(stamp: str | None) -> float | None:
+    """Days since an ISO stamp, or None when it cannot be read."""
+    if not stamp:
+        return None
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when).total_seconds() / 86400
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -181,16 +194,18 @@ def arena_search(name: str, length: int = 25) -> list[dict]:
     """Rows for one model name out of the arena dataset.
 
     `/search` is used instead of `/filter`+offset because the latter 500s at most offsets past zero on
-    this 1.2M-row dataset. Retries twice: the datasets-server is flaky in a way that is not our bug.
+    this 1.2M-row dataset. Retries once: the datasets-server is flaky in a way that is not our bug.
     """
     query = " ".join(str(name).split("/")[-1].replace("-", " ").replace("_", " ").split())
     if not query:
         return []
     url = f"{ARENA_SEARCH}&query={urllib.parse.quote(query)}&offset=0&length={length}"
     last: Exception | None = None
-    for attempt in range(3):
+    # Two attempts of 20 s, not three of 45: this runs inside a survey the user is waiting on, and a
+    # datasets-server that 500s twice in a row is not going to answer on the third.
+    for attempt in range(2):
         try:
-            payload = json.loads(_get_text(url, timeout=45.0))
+            payload = json.loads(_get_text(url, timeout=20.0))
             rows = [row.get("row") or {} for row in (payload.get("rows") or [])]
             return [row for row in rows if str(row.get("category") or "overall") == "overall"]
         except Exception as exc:  # noqa: BLE001
@@ -246,31 +261,54 @@ def _arena_entry(rows: list[dict], bare: str) -> dict | None:
     return best[1] if best else None
 
 
-def refresh_arena(names: list[str], *, max_lookups: int = 24, gap: float = 0.4) -> dict | None:
+MISS_TTL_DAYS = 7.0     # how long "this model is not on the leaderboard" stays a fact
+
+
+def refresh_arena(names: list[str], *, max_lookups: int = 24, gap: float = 0.25,
+                  budget: float = 12.0) -> dict | None:
     """Look up *names* on LMArena and fold the hits into the cache. Never raises.
 
-    Only called from a survey: a render must never touch the network, and asking about models nobody
-    displays would spend quota on curiosity.
+    Three rules, all learned by making the survey crawl:
+
+    1. **A miss is cached.** Storing only hits meant every survey re-searched every unrated model —
+       six requests of 2-10 s each, on every run, forever, to relearn the same "not on the board".
+       Misses are kept per id for ``MISS_TTL_DAYS`` and skipped until they expire.
+    2. **The whole pass has a budget.** This runs inside a survey the user is waiting on, so it stops
+       at ``budget`` seconds and keeps whatever it has; the rest is looked up next time.
+    3. **A render never calls this.** Only a survey does, because a board that blocks on someone
+       else's server is a board that looks broken.
+
+    Only called from a survey.
     """
     cache = load() or {}
     arena = dict(cache.get("arena") or {})
     models: dict[str, dict] = dict(arena.get("models") or {})
+    misses: dict[str, str] = dict(arena.get("misses") or {})
+
     looked = 0
+    started = time.monotonic()
     for model in names:
         bare = str(model).split("/", 1)[-1]
-        if not bare or _norm(bare) in models:
+        key = _norm(bare)
+        if not bare or key in models:
             continue
-        if looked >= max_lookups:
+        age = _age_days(misses.get(key))
+        if age is not None and age < MISS_TTL_DAYS:
+            continue                      # asked recently, still absent: do not ask again
+        if looked >= max_lookups or time.monotonic() - started > budget:
             break
         looked += 1
         entry = _arena_entry(arena_search(bare), bare)
         if entry is not None:
-            models[_norm(bare)] = entry
+            models[key] = entry
+            misses.pop(key, None)
+        else:
+            misses[key] = _now()
         if gap:
             time.sleep(gap)
     if looked:
-        arena = {"models": models, "fetched_at": _now(), "published": _now()[:10],
-                 "count": len(models)}
+        arena = {"models": models, "misses": misses, "fetched_at": _now(),
+                 "published": _now()[:10], "count": len(models)}
         cache = {**cache, "arena": arena}
         _write(cache)
     return cache or None

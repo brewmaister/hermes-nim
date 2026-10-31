@@ -1268,6 +1268,31 @@ class RenderTests(unittest.TestCase):
         self.assertIn("🔴 b — stalled", text)
         self.assertIn("2 models", text)
 
+    def test_a_miss_is_cached_so_the_survey_stops_re_asking(self):
+        """`not on the leaderboard` is a fact for a week, not a question to re-ask every survey."""
+        from nim import scores as scores_module
+
+        calls: list[str] = []
+
+        def search(name, length=25):
+            calls.append(name)
+            return []
+
+        with mock.patch.object(scores_module, "load", return_value={}), \
+                mock.patch.object(scores_module, "_write"), \
+                mock.patch.object(scores_module, "arena_search", side_effect=search):
+            first = scores_module.refresh_arena(["x/nope-30b"], gap=0.0)
+            self.assertEqual(calls, ["nope-30b"])
+            misses = (first or {}).get("arena", {}).get("misses") or {}
+            self.assertIn("nope30b", misses)
+
+        # second survey: same id, cache now knows it is absent
+        with mock.patch.object(scores_module, "load", return_value=first), \
+                mock.patch.object(scores_module, "_write"), \
+                mock.patch.object(scores_module, "arena_search", side_effect=search):
+            scores_module.refresh_arena(["x/nope-30b"], gap=0.0)
+        self.assertEqual(calls, ["nope-30b"], "a cached miss must not be re-searched")
+
     def test_overlapping_intervals_share_a_medal(self):
         """🥈 and 🥉 must not claim a gap the published interval does not support."""
         from nim import scores as scores_module

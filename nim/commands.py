@@ -253,9 +253,14 @@ def _dead(report: dict) -> list[dict]:
 # ---------------------------------------------------------------------------- slash command
 
 def slash_command(raw_args: str = "", *, session_id: str = "", **_ignored) -> str:
+    """The chat door: the same text, dressed for a surface that can render bold and monospace.
+
+    `hermes nim` keeps the plain render — a terminal would show the escape backslashes — so formatting
+    is a property of the door, not of the content.
+    """
     verb, extra = _verb_and_rest(raw_args)
     text, _code = dispatch(verb, extra)
-    return text
+    return render.markdown_v2(text)
 
 
 def will_measure(verb: str) -> bool:

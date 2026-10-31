@@ -46,6 +46,40 @@ NEW_MARK = "🆕"   # appeared in /v1/models within NEW_WINDOW_DAYS, and is not 
 NEW_WINDOW_DAYS = 7.0
 
 
+# Telegram's MarkdownV2 demands that every one of these be backslash-escaped, or the whole message is
+# rejected and the adapter silently resends it as plain text — which is why plugin output has looked
+# like unformatted text: the strings were never valid MarkdownV2 in the first place.
+MDV2_SPECIAL = "_*[]()~`>#+-=|{}.!"
+
+
+def _escape_mdv2(text: str) -> str:
+    return "".join(f"\\{char}" if char in MDV2_SPECIAL else char for char in text)
+
+
+def markdown_v2(text: str) -> str:
+    """The chat door's presentation: escape everything, then add the two emphases Telegram can show.
+
+    Heads are bold, the command column is a code span (monospace, and it keeps the column aligned on a
+    phone). Nothing else is decorated — a plain sentence with no emphasis is worth more than a rainbow.
+    Code spans are NOT escaped inside: MarkdownV2 treats their content literally, so an escape there
+    would print a backslash.
+    """
+    lines: list[str] = []
+    for raw in (text or "").splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("▸") or stripped.endswith("— commands") or stripped.endswith("— comandos") \
+                or stripped in ("glyphs", "glifos"):
+            lines.append(f"*{_escape_mdv2(stripped)}*")
+            continue
+        found = re.match(r"(\s*)(/nim(?:\s+[^\s<\[]+)?(?:\s+(?:<[^>]+>|\[[^\]]+\]))?)(.*)$", raw)
+        if found:
+            indent, command, rest = found.groups()
+            lines.append(f"{indent}`{command}`{_escape_mdv2(rest)}")
+            continue
+        lines.append(_escape_mdv2(raw))
+    return "\n".join(lines)
+
+
 def plain(text: str) -> str:
     """Strip the emphasis for surfaces that print raw text.
 

@@ -293,6 +293,46 @@ class BenchmarkPriorTests(unittest.TestCase):
             self.assertIsNone(scores.lookup("openai/gpt-oss-20b"))
             self.assertEqual(scores.coverage(["a/b", "c/d"]), (0, 2))
 
+    def test_the_star_means_best_for_chat(self):
+        """Star = the model to point Hermes at: scored-and-fast, then scored, then fast, then anything."""
+        def result(model, ttft, tps=None, status="ok"):
+            return {"model": model, "status": status, "ok_attempts": 2, "attempts": 2,
+                    "ttft_s": ttft, "tps": tps, "trials": []}
+
+        scored_fast = result("nvidia/nemotron-3.5-super-vl-120b-a12b", 0.6, 90.0)   # 🧠24.1
+        big_unscored = result("mistralai/mistral-large-4-1t-a52b", 0.5, 30.0)        # 52B, no score
+        quick_unscored = result("nvidia/nemotron-3.5-bolt-e4b", 0.3, 150.0)          # 4B, no score
+        report = {"models": {r["model"]: r for r in (scored_fast, big_unscored, quick_unscored)}}
+        with install_scores():
+            self.assertEqual(engine.recommended(report)["model"], scored_fast["model"])
+
+        # without the scored model, the fastest writer wins — not the biggest parameter count
+        report["models"].pop(scored_fast["model"])
+        with install_scores():
+            self.assertEqual(engine.recommended(report)["model"], quick_unscored["model"])
+
+    def test_a_safety_classifier_is_never_the_star(self):
+        classifier = {"model": "meta/llama-guard-4-12b", "status": "ok", "ok_attempts": 2,
+                      "attempts": 2, "ttft_s": 0.05, "tps": 400.0, "trials": []}
+        chat = {"model": "openai/gpt-oss-20b", "status": "ok", "ok_attempts": 2, "attempts": 2,
+                "ttft_s": 0.9, "tps": 40.0, "trials": []}
+        with install_scores():
+            self.assertEqual(engine.recommended({"models": {classifier["model"]: classifier,
+                                                            chat["model"]: chat}})["model"],
+                             chat["model"])
+
+    def test_a_slow_writer_keeps_the_star_but_loses_the_top_tier(self):
+        """Scored but crawling still beats unscored-but-quick: quality is the stronger evidence."""
+        crawling = {"model": "nvidia/nemotron-3.5-super-vl-120b-a12b", "status": "ok",
+                    "ok_attempts": 2, "attempts": 2, "ttft_s": 1.0, "tps": 3.0, "trials": []}
+        quick = {"model": "nvidia/nemotron-3.5-bolt-e4b", "status": "ok", "ok_attempts": 2,
+                 "attempts": 2, "ttft_s": 0.2, "tps": 300.0, "trials": []}
+        with install_scores():
+            self.assertEqual(engine.recommended({"models": {"nvidia/nemotron-3.5-super-vl-120b-a12b": crawling,
+                                                            "nvidia/nemotron-3.5-bolt-e4b": quick}})["model"],
+                             crawling["model"])
+            self.assertLess(engine.chat_rank(crawling), engine.chat_rank(quick))
+
     def test_recommendation_is_gated_on_speed_not_just_rank(self):
         slow = {"model": "minimaxai/minimax-m3.1-flash", "status": "ok", "ok_attempts": 2,
                 "attempts": 2, "ttft_s": 9.0, "trials": []}   # best score, too slow
@@ -1120,6 +1160,7 @@ moa:
         with mock.patch.object(settings_module, "_CTX", None), \
                 mock.patch.object(settings_module, "_config_entry_from_file",
                                   return_value=file_settings):
+            settings_module.reset_cache()
             current = settings_module.settings()
         self.assertEqual(current.shortlist_models(), ["minimaxai/minimax-m3.1-flash"])
         self.assertEqual(current.ttft_seconds, 9)
@@ -1141,6 +1182,7 @@ moa:
 
         with mock.patch.object(settings_module, "_CTX", None), \
                 mock.patch.object(settings_module, "_config_entry_from_file", return_value={}):
+            settings_module.reset_cache()
             self.assertEqual(settings_module.settings().shortlist_models(), [])
 
     def test_a_shortlist_you_set_is_probed(self):

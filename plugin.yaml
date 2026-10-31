@@ -1,5 +1,5 @@
 name: hermes-nim
-version: "0.0.22.0"
+version: "0.0.23.0"
 manifest_version: 2
 api_version: 1
 description: "NVIDIA NIM model health in chat: /nim reports which NIM models are alive, stalled, retired or newly arrived, because NVIDIA publishes none of it. `hermes nim` is the same engine for scripts and cron."
@@ -62,6 +62,14 @@ config_schema:
     type: number
     default: 1
     description: "Attempts per model for the interactive /nim (one keeps the worst case at a single stall cap; /nim probe still uses `attempts`). Hysteresis still needs two consecutive runs before anything is called dead, so a single sample cannot fake a death."
+  recommend_max_ttft_s:
+    type: number
+    default: 5
+    description: "The star's speed gate: a model that takes longer than this for a first byte is not recommended for chat, however good its score."
+  recommend_min_tps:
+    type: number
+    default: 25
+    description: "A scored model must write at least this many tokens/second to keep the star's top tier; below it, quality still counts but ranks behind a model that is both scored and quick."
   scores_refresh:
     type: boolean
     default: true

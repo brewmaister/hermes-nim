@@ -315,6 +315,20 @@ rec:
 
 Your overlay outranks the shipped file, so a rewording costs one line and no fork.
 
+## What the star means
+
+The ⭐️ is "point Hermes at this one", which is a different question from "which model ranks first":
+
+1. **A published score and a real writing speed** — quality, confirmed usable.
+2. **A published score that crawls** — still the smartest thing available, just leaden.
+3. **No score, but a measured writing speed** — the fastest evidence available.
+4. **No score, no speed** — first byte only.
+
+Gates: it must be a chat model (a safety classifier answering in 0.05 s is not one), it must have
+answered every attempt, and its first byte must clear `recommend_max_ttft_s` (5 s). Parameter count is
+deliberately **not** part of this ordering — "550B in the id" is a guess about quality, and it used to
+put the star on the biggest unscored model rather than the one that was demonstrably pleasant.
+
 ## What the answer tells you
 
 The probe reads the reply, not just the status code. Measured on this account:

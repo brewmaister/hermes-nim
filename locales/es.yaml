@@ -208,5 +208,6 @@ settings:
   recheck: "· recheck_ttft_seconds: {value} (a un modelo ya marcado como caído solo se le pide un byte durante este tiempo; 0 = usar ttft_seconds)"
   live_attempts: "· live_attempts: {value} (para /nim interactivo; /nim probe usa {attempts})"
   survey: "· survey_catalog: {value} (cada /nim mide todos los modelos listados; {workers} en paralelo, tope {cap}s)"
-  scores: "· scores_refresh: {value} (un survey vuelve a descargar el leaderboard de LMArena si la caché tiene más de {hours}h)"
+  recommend: "· recommend_max_ttft_s: {value}s · recommend_min_tps: {tps} (el filtro del ⭐️: debe responder así de rápido, y un modelo con puntuación debe escribir así de rápido para conservar el primer nivel)"
+  scores: "· scores_refresh: {value} (un survey vuelve a leer el Hermes Index si la caché tiene más de {hours}h)"
   language: "· language: {value} (auto sigue display.language; incluye en/es)"

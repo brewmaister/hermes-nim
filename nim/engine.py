@@ -508,23 +508,86 @@ def rank_key(result: dict) -> tuple:
 
 # A model that takes longer than this to emit a first byte is not what anyone wants recommended,
 # however strong it is on paper. Kept as a constant so the rule is visible and testable.
-RECOMMEND_MAX_TTFT_S = 5.0
+RECOMMEND_MAX_TTFT_S = 5.0   # defaults; the live values come from settings (recommend_*)
+RECOMMEND_MIN_TPS = 25.0
+
+
+def recommend_max_ttft() -> float:
+    from .settings import settings as _settings
+
+    try:
+        value = float(_settings().recommend_max_ttft_s)
+    except Exception:  # noqa: BLE001
+        value = RECOMMEND_MAX_TTFT_S
+    return value if value > 0 else RECOMMEND_MAX_TTFT_S
+
+
+def recommend_min_tps() -> float:
+    from .settings import settings as _settings
+
+    try:
+        value = float(_settings().recommend_min_tps)
+    except Exception:  # noqa: BLE001
+        value = RECOMMEND_MIN_TPS
+    return value if value > 0 else RECOMMEND_MIN_TPS
+
+
+def chat_rank(result: dict, min_tps: float | None = None) -> tuple:
+    """How good this model would be to actually chat with, best first.
+
+    Rank order and *recommendation* order are different questions. `rank_key` answers "which model has
+    the strongest evidence of quality"; a star answers "which one should you point Hermes at right now",
+    and that model must also be pleasant to talk to.
+
+    Tiers, in order:
+      1. A published score and a decent writing speed — quality, confirmed usable.
+      2. A published score that writes slowly — still the smartest thing available, just leaden.
+      3. No score, but a measured writing speed — fastest evidence we have.
+      4. No score and no speed — first byte only.
+    Parameter count is deliberately absent: "550B in the id" is a guess about quality, and it made the
+    star land on the biggest unscored model rather than the one that was demonstrably pleasant.
+    """
+    from . import benchmarks
+
+    model = str(result.get("model") or "")
+    score = benchmarks.quality(model)
+    tps = result.get("tps")
+    speed = tps if isinstance(tps, (int, float)) else None
+    latency = result.get("ttft_s")
+    latency = latency if isinstance(latency, (int, float)) else 9e9
+    if min_tps is None:      # resolved by the caller when ranking a list: settings() is not cheap
+        min_tps = recommend_min_tps()
+    if score is not None and (speed is None or speed >= min_tps):
+        return (0, -score, -(speed or 0.0), latency)
+    if score is not None:
+        return (1, -score, -(speed or 0.0), latency)
+    if speed is not None:
+        return (2, -speed, -reliability(result), latency)
+    return (3, 0.0, -reliability(result), latency)
 
 
 def recommended(report: dict) -> dict | None:
-    """The single model to use right now, or None when nothing qualifies.
+    """The one model to point Hermes at right now, or None when nothing qualifies.
 
-    Highest-ranked model that answered *every* attempt and is quick enough to be pleasant. Ranking
-    alone is not a recommendation: a 40 s first byte is unusable in a chat loop no matter how good
-    the benchmark is, so speed is a gate here rather than a tie-break.
+    Only chat models: a safety classifier that answers in 0.1 s is not a chat model, and it used to be
+    eligible simply because it was alive. Severity must be `ok` (answered every attempt) and the first
+    byte must clear the comfort cap.
     """
-    for result in sorted((report.get("models") or {}).values(), key=rank_key):
+    eligible = []
+    cap = recommend_max_ttft()
+    for result in (report.get("models") or {}).values():
         if severity(result) != "ok":
             continue
+        if capability(str(result.get("model") or "")) != "chat":
+            continue
         latency = result.get("ttft_s")
-        if latency is None or latency <= RECOMMEND_MAX_TTFT_S:
-            return result
-    return None
+        if latency is not None and latency > cap:
+            continue
+        eligible.append(result)
+    if not eligible:
+        return None
+    min_tps = recommend_min_tps()      # one settings read per recommendation, not one per comparison
+    return min(eligible, key=lambda result: chat_rank(result, min_tps))
 
 
 # --------------------------------------------------------------------------- verdicts

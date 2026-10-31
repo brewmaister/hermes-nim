@@ -53,6 +53,11 @@ class Settings:
     live_attempts: int = 1
     # The quality prior is fetched, not typed: a survey re-reads the Hermes Index when the
     # cache is older than scores_max_age_hours. False pins whatever is cached and stops the fetch.
+    # What the star means: the model to point Hermes at for chat. First byte must clear
+    # recommend_max_ttft_s, and a *scored* model must also write at least recommend_min_tps to keep its
+    # top tier — a smart model that crawls is still recommended, just below one that does not.
+    recommend_max_ttft_s: float = 5.0
+    recommend_min_tps: float = 25.0
     scores_refresh: bool = True
     scores_max_age_hours: float = 24.0
     # "auto" follows NIM_LANGUAGE → HERMES_LANGUAGE → display.language; or pin "en"/"es".
@@ -153,6 +158,11 @@ def _config_entry_from_file() -> dict:
     return entry.get("settings") or {}
 
 
+def reset_cache() -> None:
+    """Kept for callers that expect a cache hook; settings are resolved per call on purpose."""
+    return None
+
+
 def _configured() -> dict:
     """Settings dict from the live ctx, or from config.yaml when there is no ctx."""
     if _CTX is None:
@@ -210,6 +220,8 @@ def describe() -> str:
         t("settings.live_attempts", value=current.live_attempts, attempts=current.attempts),
         t("settings.survey", value=current.survey_catalog, workers=current.survey_workers,
           cap=f"{current.survey_ttft_seconds:g}"),
+        t("settings.recommend", value=f"{current.recommend_max_ttft_s:g}",
+          tps=f"{current.recommend_min_tps:g}"),
         t("settings.scores", value=current.scores_refresh, hours=f"{current.scores_max_age_hours:g}"),
         t("settings.language", value=current.language),
     ]

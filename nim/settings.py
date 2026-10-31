@@ -252,14 +252,16 @@ def describe() -> str:
         t("settings.g_rank"),
         row("order_by", current.order_by, "order"),
         row("recommend_max_ttft_s", f"{current.recommend_max_ttft_s:g}", "recommend"),
-        row("recommend_min_tps", f"{current.recommend_min_tps:g}"),
+        row("recommend_min_tps", f"{current.recommend_min_tps:g}", "min_tps"),
         row("scores_refresh", current.scores_refresh, "scores",
             hours=f"{current.scores_max_age_hours:g}"),
-        row("arena_scores", current.arena_scores),
+        row("arena_scores", current.arena_scores, "arena"),
         "",
         t("settings.g_files"),
         row("state_dir", current.state_dir or "~/hermes-outputs/nim-probe"),
-        row("shortlist", models),
+        # One id per line: a comma run of seven 30-character ids is a paragraph, not a list.
+        t("settings.shortlist", count=len(current.shortlist_models())),
+        *[t("settings.shortlist_item", model=model) for model in current.shortlist_models()],
         row("language", current.language, "language"),
     ]
     return "\n".join(lines)

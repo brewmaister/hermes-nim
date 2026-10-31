@@ -53,6 +53,7 @@ role:
   shortlist: "candidato"
 
 rec:
+  tier: "nivel {tier}"
   line: "⭐️ recomendado {model} — {evidence}"
   none: "⭐️ recomendado nada — ningún modelo respondió todos los intentos"
   none_slow: "⭐️ recomendado nada por debajo de {cap}s — ahora mismo los modelos sanos son más lentos que eso"
@@ -109,6 +110,7 @@ catalog:
   footnote: "Que un modelo aparezca no prueba nada: /v1/models incluye ids que esta cuenta no puede llamar (404) y ids que responden cero bytes."
 
 dead:
+  req: " · req {id}"
   header: "NVIDIA NIM — {count} sin usar"
   none: "NVIDIA NIM — nada está caído en el último escaneo."
   dropped: "dados de baja de /v1/models ({count}): {models}"
@@ -164,6 +166,7 @@ board:
   offline_group: "  · {count} {why}"
   yours: "tuyo"
   watching: "vigilado"
+  vendors: "🏢 {vendors}"
   new_badge: " · 🆕 {count} nuevos en {days} días"
   hints: "/nim probe (solo tus modelos, rápido) · /nim catalog (detalle de caídos) · /nim json (todo)"
 

@@ -35,6 +35,7 @@ PICK_MARK = "⭐️"
 # still appears where it is not redundant: the recommendation footer, for models with no benchmark.
 QUALITY_MARK = "🧠"
 SPEED_MARK = "⚡"
+WRITE_MARK = "✍️"   # tokens per second: first byte says when it woke up, this says how fast it writes
 NEW_MARK = "🆕"   # appeared in /v1/models within NEW_WINDOW_DAYS, and is not the install baseline
 NEW_WINDOW_DAYS = 7.0
 
@@ -194,6 +195,12 @@ def _quality_tag(result: dict) -> str:
     return f"{QUALITY_MARK}{published.index:g}{family}"
 
 
+def _write_tag(result: dict) -> str:
+    """Tokens/s, only when the sample was big enough to mean something (see engine.attempt)."""
+    tps = result.get("tps")
+    return f"{WRITE_MARK}{tps:g}t/s" if isinstance(tps, (int, float)) else ""
+
+
 def _speed_tag(result: dict) -> str:
     """⚡ only in front of a measurement. `stalled` is a verdict, not a duration."""
     measured = metrics(result)
@@ -219,7 +226,7 @@ def _line(result: dict, used: dict[str, list[str]], recommended: bool = False,
     the reader "candidate" next to the star, which contradicts the star. One row, one claim.
     """
     fresh = NEW_MARK if new and result["model"] in new else ""
-    bits = [bit for bit in (fresh, _quality_tag(result), _speed_tag(result),
+    bits = [bit for bit in (fresh, _quality_tag(result), _speed_tag(result), _write_tag(result),
                             t("role.recommended") if recommended else _roles(result, used)) if bit]
     mark = PICK_MARK if recommended else MARKS.get(engine.severity(result), "·")
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
@@ -269,6 +276,15 @@ def best_line(report: dict) -> str:
             why.append(f"{size:g}B")
     why += [f"{SPEED_MARK}{pick.get('ttft_s')}s",
             f"{pick.get('ok_attempts')}/{pick.get('attempts')}"]
+    write = _write_tag(pick)
+    if write:
+        why.append(write)
+    tier = str(pick.get("tier") or "").strip()
+    if tier:
+        why.append(t("rec.tier", tier=tier))
+    fingerprint = str(pick.get("fingerprint") or "").strip()
+    if fingerprint:
+        why.append(fingerprint[:14])
     # The footer keeps the full id on purpose: this is the line you paste into config.yaml.
     return t("rec.line", model=model, evidence=" · ".join(why))
 
@@ -431,13 +447,30 @@ def render_board(report: dict, limit: int = 14) -> str:
     counts = t("board.counts", chat=len(chat), utility=len(utility), offline=len(offline))
     if new:
         counts += t("board.new_badge", count=len(new), days=f"{NEW_WINDOW_DAYS:g}")
-    lines = [header, counts, ""]
+    lines = [header, counts]
+    # Who is actually serving you, counted over the models that answered — the vendor field is the one
+    # attribute /v1/models offers, and it turns "13 models are down" into "one lab is down".
+    vendors: dict[str, int] = {}
+    owners = report.get("catalog_owners") or {}
+    for model in list(chat) + list(utility):
+        vendor = (owners.get(model) or "").strip() or "?"
+        vendors[vendor] = vendors.get(vendor, 0) + 1
+    if vendors:
+        top = sorted(vendors.items(), key=lambda item: (-item[1], item[0]))[:4]
+        rendered = " · ".join(f"{name} {count}" for name, count in top)
+        if len(vendors) > len(top):
+            rendered += " …"
+        lines.append(t("board.vendors", vendors=rendered))
+    lines.append("")
 
     if chat:
         lines.append(t("board.section_chat"))
         for model in chat[:limit]:
             verdict = alive[model]
             bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]
+            write = _write_tag(verdict)
+            if write:
+                bits.append(write)
             if model in new:
                 bits.insert(0, NEW_MARK)
             published = benchmarks.lookup(model)
@@ -534,7 +567,9 @@ def render_dead(report: dict) -> str:
         for result in sorted(dead, key=lambda r: r["model"]):
             where = short_where((used or {}).get(result["model"]) or [])
             suffix = f" · {where}" if where else ""
-            lines.append(f"• {result['model']} — {label(result)}{suffix}")
+            req_id = str(result.get("req_id") or "").strip()
+            trace = t("dead.req", id=req_id[:8]) if req_id else ""
+            lines.append(f"• {result['model']} — {label(result)}{suffix}{trace}")
     if removed:
         lines += ["", t("dead.dropped", count=len(removed),
                         models=", ".join(removed[:8]) + ("…" if len(removed) > 8 else ""))]

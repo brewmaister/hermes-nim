@@ -315,6 +315,25 @@ rec:
 
 Your overlay outranks the shipped file, so a rewording costs one line and no fork.
 
+## What the answer tells you
+
+The probe reads the reply, not just the status code. Measured on this account:
+
+```
+openai/gpt-oss-20b           ⚡0.34s  ✍️36.9t/s   32 tokens   req e5ba9f4f
+minimaxai/minimax-m3.1-flash ⚡1.46s  ✍️24.3t/s   32 tokens   req b49c3b3b
+```
+
+- **✍️ tokens/second** — generation speed, from `usage.completion_tokens` over the time after the
+  first byte. Only shown when ≥4 tokens came back: below that the rate is noise.
+- **🏢 vendor split** — `owned_by` from `/v1/models`, counted over the models that answered. Turns
+  "13 models are down" into "one lab is down".
+- **req** — `nvcf-reqid`, the only handle NVIDIA support can search on. Shown on dead rows.
+
+Two things that are returned but useless here, so they are captured and not advertised:
+`service_tier` and `system_fingerprint` are `null` on this gateway, and streaming chunks omit both
+entirely. If NVIDIA starts populating them, the footer picks them up with no code change.
+
 ## The board: who is actually online
 
 NVIDIA lists 85 models for this account. 14 answer. The other 71 are 404-unprovisioned, 500ing, or

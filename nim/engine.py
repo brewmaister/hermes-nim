@@ -142,46 +142,112 @@ def key_status(base: str, key: str) -> dict:
         return {"ok": True, "note": f"/v1/models unreachable ({type(exc).__name__})"}
 
 
-def attempt(base: str, model: str, key: str, ttft: float) -> dict:
-    """One streaming call. Returns {kind, seconds, detail[, eol_at]}.
+CHAT_PATH = "chat/completions"
+EMBEDDING_PATH = "embeddings"
+
+
+def endpoint_for(model: str) -> str:
+    """Which API path this model actually serves.
+
+    Probing an embeddings model at /chat/completions measures the wrong thing: it 404s for a reason
+    that says nothing about whether the model is usable. The marker that classified it picks the path.
+    """
+    marker = utility_marker(model) or ""
+    return EMBEDDING_PATH if marker in {"embed", "rerank", "retriev"} else CHAT_PATH
+
+
+def _sse_json(raw: bytes) -> dict:
+    line = raw.decode(errors="replace").strip()
+    if line.startswith("data:"):
+        line = line[5:].strip()
+    if not line or line == "[DONE]":
+        return {}
+    try:
+        return json.loads(line)
+    except Exception:  # noqa: BLE001 - a truncated frame is not worth failing the probe over
+        return {}
+
+
+def attempt(base: str, model: str, key: str, ttft: float, endpoint: str | None = None) -> dict:
+    """One call. Returns {kind, seconds, total, detail, tokens, tps, tier, fingerprint, req_id}.
 
     `kind` is one of ok / stall / eol / not_provisioned / rate_limited / auth_error / http_<code>.
-    Time-to-first-byte is the measurement: a json body only arrives after the model has spoken.
+    Time-to-first-byte is the headline measurement, but the answer also says how many tokens came
+    back and how fast they arrived — a model that thinks for 2 s and then writes at 90 tok/s is a
+    different tool from one that starts in 0.4 s and crawls.
     """
-    body = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": PROBE_PROMPT}],
-        "max_tokens": 32,
-        "temperature": 0,
-        "stream": True,
-    }).encode()
+    path = endpoint or endpoint_for(model)
+    streaming = path == CHAT_PATH
+    if streaming:
+        payload = {"model": model,
+                   "messages": [{"role": "user", "content": PROBE_PROMPT}],
+                   "max_tokens": 32, "temperature": 0,
+                   "stream": True,
+                   "stream_options": {"include_usage": True}}
+        accept = "text/event-stream"
+    else:
+        payload = {"model": model, "input": ["ping"], "input_type": "query"}
+        accept = "application/json"
     req = urllib.request.Request(
-        f"{base.rstrip('/')}/chat/completions",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        },
+        f"{base.rstrip('/')}/{path}",
+        data=json.dumps(payload).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                 "Accept": accept},
     )
     started = time.time()
     try:
         with _urlopen(req, ttft) as response:
+            headers = getattr(response, "headers", None) or {}
+            req_id = ""
+            try:  # NVIDIA puts its own id on the reply; support can trace a request with it
+                req_id = str(headers.get("nvcf-reqid") or headers.get("x-request-id") or "")
+            except Exception:  # noqa: BLE001
+                pass
+
+            if not streaming:
+                body = response.read().decode(errors="replace")
+                total = round(time.time() - started, 2)
+                try:
+                    ok = bool(json.loads(body or "{}").get("data"))
+                except Exception:  # noqa: BLE001
+                    ok = False
+                return ({"kind": "ok", "seconds": total, "total": total, "detail": "",
+                         "req_id": req_id} if ok else
+                        {"kind": "stall", "seconds": total, "detail": "empty embeddings body",
+                         "req_id": req_id})
+
             first_byte: float | None = None
+            tokens = 0
+            usage: dict = {}
+            tier = ""
+            fingerprint = ""
             for raw in response:
-                if raw.strip():
-                    if first_byte is None:
-                        first_byte = time.time() - started
-                    if b"[DONE]" in raw:
-                        break
-            if first_byte is not None:
-                # Two different numbers matter: how long before it starts talking (the thing that
-                # makes a model feel fast) and how long the whole 32-token answer took. Both are
-                # rounded here so a report never implies more precision than a LAN round trip.
-                return {"kind": "ok", "seconds": round(first_byte, 2),
-                        "total": round(time.time() - started, 2), "detail": ""}
-        return {"kind": "stall", "seconds": round(time.time() - started, 2),
-                "detail": "empty stream"}
+                if not raw.strip():
+                    continue
+                if first_byte is None:
+                    first_byte = time.time() - started
+                if b"[DONE]" in raw:
+                    break
+                chunk = _sse_json(raw)
+                if not chunk:
+                    continue
+                usage = chunk.get("usage") or usage
+                tier = chunk.get("service_tier") or tier
+                fingerprint = chunk.get("system_fingerprint") or fingerprint
+                for choice in chunk.get("choices") or []:
+                    if (choice.get("delta") or {}).get("content"):
+                        tokens += 1
+            if first_byte is None:
+                return {"kind": "stall", "seconds": round(time.time() - started, 2),
+                        "detail": "empty stream", "req_id": req_id}
+            total = time.time() - started
+            counted = int(usage.get("completion_tokens") or tokens or 0)
+            writing = total - first_byte
+            # Below ~4 tokens the rate is noise: one token either way moves it by 50%.
+            tps = round(counted / writing, 1) if counted >= 4 and writing > 0.05 else None
+            return {"kind": "ok", "seconds": round(first_byte, 2), "total": round(total, 2),
+                    "detail": "", "tokens": counted, "tps": tps, "tier": tier,
+                    "fingerprint": fingerprint, "req_id": req_id}
     except urllib.error.HTTPError as exc:
         try:
             payload = json.loads(exc.read().decode(errors="replace"))
@@ -197,6 +263,11 @@ def attempt(base: str, model: str, key: str, ttft: float) -> dict:
         }.get(exc.code, f"http_{exc.code}")
         result = {"kind": kind, "code": exc.code,
                   "seconds": round(time.time() - started, 2), "detail": detail}
+        try:
+            result["req_id"] = str(exc.headers.get("nvcf-reqid")
+                                   or exc.headers.get("x-request-id") or "")
+        except Exception:  # noqa: BLE001
+            pass
         if kind == "eol":
             found = re.search(r"end of life on ([0-9T:\-]+Z)", detail)
             if found:
@@ -207,14 +278,22 @@ def attempt(base: str, model: str, key: str, ttft: float) -> dict:
                 "detail": type(exc).__name__}
 
 
+def _maybe_int(value: float | int | None) -> int | None:
+    return int(value) if isinstance(value, (int, float)) else None
+
+
+def _maybe_round(value: float | None, digits: int) -> float | None:
+    return round(value, digits) if isinstance(value, (int, float)) else None
+
+
 def probe(base: str, model: str, key: str, ttft: float = 25.0, attempts: int = 2,
-          stagger: float = 1.5) -> dict:
+          stagger: float = 1.5, endpoint: str | None = None) -> dict:
     """Several attempts, because one is a coin flip on a replica-pooled gateway."""
     trials: list[dict] = []
     for index in range(max(1, attempts)):
         if index:
             time.sleep(max(0.0, stagger))
-        trials.append(attempt(base, model, key, ttft))
+        trials.append(attempt(base, model, key, ttft, endpoint))
         # A hard verdict will not change on retry.
         if trials[-1]["kind"] in {"eol", "not_provisioned", "auth_error"}:
             break
@@ -240,6 +319,13 @@ def probe(base: str, model: str, key: str, ttft: float = 25.0, attempts: int = 2
         "ttft_median_s": median([trial["seconds"] for trial in okays]),
         "total_s": median([trial.get("total") for trial in okays if trial.get("total") is not None]),
         "detail": next((trial["detail"] for trial in trials if trial["detail"]), ""),
+        # What the answer said about itself: tokens, writing speed, which backend served it, and the
+        # vendor's request id (the only handle NVIDIA support can search on).
+        "tokens": _maybe_int(median([t["tokens"] for t in okays if t.get("tokens")])),
+        "tps": _maybe_round(median([t["tps"] for t in okays if t.get("tps")]), 1),
+        "tier": next((t.get("tier") for t in okays if t.get("tier")), ""),
+        "fingerprint": next((t.get("fingerprint") for t in okays if t.get("fingerprint")), ""),
+        "req_id": next((t.get("req_id") for t in reversed(trials) if t.get("req_id")), ""),
         "trials": [f"{trial['kind']}:{trial['seconds']}" for trial in trials],
         "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
@@ -251,15 +337,27 @@ def probe(base: str, model: str, key: str, ttft: float = 25.0, attempts: int = 2
 
 # --------------------------------------------------------------------------- catalog
 
-def catalog(base: str, key: str) -> list[str]:
-    """Live /v1/models ids. Empty list means the fetch failed — callers must treat it as unknown."""
+def catalog_entries(base: str, key: str) -> tuple[list[str], dict[str, str]]:
+    """Live /v1/models: (sorted ids, {id: vendor}).
+
+    `owned_by` is the only attribute the endpoint offers beyond the id, and it is worth keeping: a
+    vendor split answers "is this outage one lab or the whole platform?" for free.
+    """
     req = urllib.request.Request(
         f"{base.rstrip('/')}/models", headers={"Authorization": f"Bearer {key}"})
     try:
         with _urlopen(req, 30) as response:
-            return sorted(entry["id"] for entry in json.load(response).get("data", []))
+            entries = json.load(response).get("data", [])
     except Exception:  # noqa: BLE001
-        return []
+        return [], {}
+    owners = {str(entry.get("id")): str(entry.get("owned_by") or "")
+              for entry in entries if entry.get("id")}
+    return sorted(owners), owners
+
+
+def catalog(base: str, key: str) -> list[str]:
+    """Live /v1/models ids. Empty list means the fetch failed — callers must treat it as unknown."""
+    return catalog_entries(base, key)[0]
 
 
 # --------------------------------------------------------------------------- config scan
@@ -554,8 +652,9 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
     # A survey reads the catalog *first*, so the list of ids is known before probing instead of after:
     # the point of a survey is to measure every model NVIDIA lists, not just the ones already in use.
     catalog_first: list[str] = []
+    owners: dict[str, str] = {}
     if survey:
-        catalog_first = catalog(base, resolved_key)
+        catalog_first, owners = catalog_entries(base, resolved_key)
         for model in catalog_first:
             if model not in targets:
                 targets.append(model)
@@ -599,7 +698,10 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         # models and would produce a fake RECOV storm once the key is fixed.
         return _credential_report(base, rejected, configured_dir)
 
-    live_catalog = catalog_first or catalog(base, resolved_key)
+    if not catalog_first:
+        live_catalog, owners = catalog_entries(base, resolved_key)
+    else:
+        live_catalog = catalog_first
     catalog_ok = bool(live_catalog)
 
     previous_seen = previous.get("catalog_seen") or {}
@@ -696,6 +798,7 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         "models": models_by_id,
         "configured_in": used,
         "catalog": live_catalog or previous_catalog,
+        "catalog_owners": owners or (previous.get("catalog_owners") or {}),
         "catalog_fetch_ok": catalog_ok,
         "catalog_seen": merge_seen(previous_seen, live_catalog),
         "new_models_probed": {model: {"status": r["status"], "ttft_s": r["ttft_s"]}

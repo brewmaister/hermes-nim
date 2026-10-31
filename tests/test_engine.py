@@ -702,6 +702,58 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn("never surveyed", render.render_board(report))
 
 
+class ResponseDataTests(unittest.TestCase):
+    """The answer carries more than a status: tokens, writing speed, backend, request id."""
+
+    def test_the_probe_path_follows_the_model_kind(self):
+        self.assertEqual(engine.endpoint_for("nvidia/embed-qa-4"), "embeddings")
+        self.assertEqual(engine.endpoint_for("baai/bge-m3-rerank"), "embeddings")
+        self.assertEqual(engine.endpoint_for("openai/gpt-oss-20b"), "chat/completions")
+
+    def test_probe_keeps_what_the_answer_said_about_itself(self):
+        def fake_attempt(_b, model, _k, _ttft, _endpoint=None):
+            return {"kind": "ok", "seconds": 0.4, "total": 1.4, "detail": "", "tokens": 32,
+                    "tps": 32.0, "tier": "default", "fingerprint": "vllm-abc123456789",
+                    "req_id": "3d49dd76-4c14-41a8-bf05-a0a5ea5abfa7"}
+
+        with mock.patch.object(engine, "attempt", side_effect=fake_attempt):
+            result = engine.probe("http://x", "a/model", "k", ttft=1, attempts=1)
+        self.assertEqual(result["tokens"], 32)
+        self.assertEqual(result["tps"], 32.0)
+        self.assertEqual(result["tier"], "default")
+        self.assertEqual(result["req_id"], "3d49dd76-4c14-41a8-bf05-a0a5ea5abfa7")
+        self.assertTrue(result["fingerprint"].startswith("vllm"))
+
+    def test_a_failure_still_carries_its_request_id(self):
+        def fake_attempt(_b, _m, _k, _t, _endpoint=None):
+            return {"kind": "not_provisioned", "seconds": 0.2, "detail": "nope",
+                    "req_id": "abcdef12-3456"}
+
+        with mock.patch.object(engine, "attempt", side_effect=fake_attempt):
+            result = engine.probe("http://x", "a/model", "k", ttft=1, attempts=1)
+        self.assertEqual(result["req_id"], "abcdef12-3456")
+
+    def test_the_board_shows_speed_vendors_and_tier(self):
+        survey = {"at": engine._now_iso(), "listed": 2, "measured": 2, "online": 2}
+        report = _fake_report({"openai/gpt-oss-20b": "ok", "nvidia/nemotron-3-ultra-550b-a55b": "ok"},
+                              catalog=("openai/gpt-oss-20b",
+                                       "nvidia/nemotron-3-ultra-550b-a55b"), survey=survey)
+        for verdict in report["models"].values():
+            verdict.update({"tokens": 32, "tps": 41.5, "tier": "default",
+                            "fingerprint": "vllm-127abc", "req_id": "req-123456789"})
+        report["catalog_owners"] = {"openai/gpt-oss-20b": "openai",
+                                    "nvidia/nemotron-3-ultra-550b-a55b": "nvidia"}
+        text = render.render_board(report)
+        self.assertIn("✍️41.5t/s", text)
+        self.assertIn("🏢 nvidia 1 · openai 1", text)
+        self.assertIn("tier default", render.best_line(report))
+
+    def test_a_dead_row_carries_the_id_you_can_quote_to_support(self):
+        report = _fake_report({"a/one": "not_provisioned"}, catalog=("a/one",))
+        report["models"]["a/one"]["req_id"] = "3d49dd76-4c14"
+        self.assertIn("req 3d49dd76", render.render_dead(report))
+
+
 class NewModelTests(unittest.TestCase):
     """🆕 has to mean "arrived", not "was there on install day"."""
 
@@ -715,7 +767,7 @@ class NewModelTests(unittest.TestCase):
             config = Path(tmp) / "config.yaml"
             config.write_text("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n")
             with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                    mock.patch.object(engine, "catalog", return_value=["a/one", "a/two"]):
+                    mock.patch.object(engine, "catalog_entries", return_value=(["a/one", "a/two"], {})):
                 first = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=config,
                                     configured_dir=tmp, survey=True, survey_ttft=1)
         self.assertEqual(render.new_models(first), set())      # baseline: 85 "new" would be a lie
@@ -731,11 +783,11 @@ class NewModelTests(unittest.TestCase):
             config = Path(tmp) / "config.yaml"
             config.write_text("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n")
             with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                    mock.patch.object(engine, "catalog", return_value=["a/one"]):
+                    mock.patch.object(engine, "catalog_entries", return_value=(["a/one"], {})):
                 engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=config,
                             configured_dir=tmp, survey=True, survey_ttft=1)
             with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                    mock.patch.object(engine, "catalog", return_value=["a/one", "a/brand-new"]):
+                    mock.patch.object(engine, "catalog_entries", return_value=(["a/one", "a/brand-new"], {})):
                 later = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=config,
                                     configured_dir=tmp, survey=True, survey_ttft=1)
         self.assertEqual(render.new_models(later), {"a/brand-new"})
@@ -1023,7 +1075,7 @@ moa:
             config.write_text("fallback_providers:\n  - model: nvidia/a\n    provider: nvidia\n"
                               "  - model: nvidia/b\n    provider: nvidia\n")
             with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                    mock.patch.object(engine, "catalog", return_value=["nvidia/a", "nvidia/b"]):
+                    mock.patch.object(engine, "catalog_entries", return_value=(["nvidia/a", "nvidia/b"], {})):
                 engine.scan(ttft=1, attempts=1, stagger=0, key="k", extra=[],
                             config_path=config, configured_dir=tmp)
         self.assertEqual(sorted(probed), ["nvidia/a", "nvidia/b"])
@@ -1138,7 +1190,7 @@ class ScanTests(unittest.TestCase):
                     "trials": ["ok:0.4"], "detail": "", "checked_at": engine._now_iso()}
 
         with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                mock.patch.object(engine, "catalog", return_value=list(catalog)):
+                mock.patch.object(engine, "catalog_entries", return_value=(list(catalog), {})):
             return engine.scan(ttft=1, attempts=1, stagger=0, key="k",
                                config_path=self.config, configured_dir=self.state_dir)
 
@@ -1173,7 +1225,7 @@ class ScanTests(unittest.TestCase):
                     "checked_at": engine._now_iso()}
 
         with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                mock.patch.object(engine, "catalog", return_value=["nvidia/a", "nvidia/b"]):
+                mock.patch.object(engine, "catalog_entries", return_value=(["nvidia/a", "nvidia/b"], {})):
             engine.scan(ttft=25, attempts=1, stagger=0, key="k", config_path=self.config,
                         configured_dir=self.state_dir, recheck_ttft=recheck)
         return seen
@@ -1201,7 +1253,7 @@ class ScanTests(unittest.TestCase):
 
         catalog = ["nvidia/a", "nvidia/b", "cloud/one", "cloud/two"]
         with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                mock.patch.object(engine, "catalog", return_value=catalog):
+                mock.patch.object(engine, "catalog_entries", return_value=(list(catalog), {})):
             report = engine.scan(ttft=25, attempts=2, stagger=0, key="k", config_path=self.config,
                                  configured_dir=self.state_dir, survey=True, survey_ttft=10)
         self.assertEqual(sorted(model for model, _, _ in probed), sorted(catalog))
@@ -1220,8 +1272,8 @@ class ScanTests(unittest.TestCase):
                     "checked_at": engine._now_iso()}
 
         with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                mock.patch.object(engine, "catalog",
-                                  return_value=["nvidia/a", "nvidia/b", "cloud/one", "cloud/two"]):
+                mock.patch.object(engine, "catalog_entries",
+                                  return_value=(["nvidia/a", "nvidia/b", "cloud/one", "cloud/two"], {})):
             report = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
                                  configured_dir=self.state_dir, survey=True, survey_ttft=1)
         self.assertEqual(len(report["models"]), 4)          # everything was measured
@@ -1240,7 +1292,7 @@ class ScanTests(unittest.TestCase):
 
         catalog = ["nvidia/a", "nvidia/b", "cloud/one", "cloud/two"]
         with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                mock.patch.object(engine, "catalog", return_value=catalog):
+                mock.patch.object(engine, "catalog_entries", return_value=(list(catalog), {})):
             engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
                         configured_dir=self.state_dir, survey=True, survey_ttft=1)
             after_survey = engine.load_state(self.state_dir)
@@ -1260,7 +1312,7 @@ class ScanTests(unittest.TestCase):
                     "checked_at": engine._now_iso()}
 
         with mock.patch.object(engine, "probe", side_effect=fake_probe), \
-                mock.patch.object(engine, "catalog", return_value=["cloud/one"]):
+                mock.patch.object(engine, "catalog_entries", return_value=(["cloud/one"], {})):
             first = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,
                                 configured_dir=self.state_dir, survey=True, survey_ttft=1)
             second = engine.scan(ttft=1, attempts=1, stagger=0, key="k", config_path=self.config,

@@ -15,7 +15,7 @@ from .i18n import t
 
 # Help text is localized too: a user who reads /nim in Spanish should not get English help.
 USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "vendor", "survey", "dead", "added",
-              "cfg", "json", "tail")
+              "cfg", "json", "legend", "tail")
 
 
 def usage() -> str:

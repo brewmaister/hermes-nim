@@ -453,7 +453,10 @@ def render_board(report: dict, limit: int = 14) -> str:
     lines = [t("board.title"), stats, ""]
 
     if chat:
-        lines.append(t("board.section_chat"))
+        # "why is 🧠 missing on most rows?" answered where the question is asked: the index is an
+        # external publication, not something the API exposes, so coverage is a fact worth stating.
+        scored = sum(1 for model in chat if benchmarks.lookup(model) is not None)
+        lines.append(t("board.section_chat", scored=scored, total=len(chat)))
         for model in chat[:limit]:
             verdict = alive[model]
             bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]
@@ -466,6 +469,7 @@ def render_board(report: dict, limit: int = 14) -> str:
             if published is not None:
                 bits.insert(0, f"{QUALITY_MARK}{published.index:g}"
                                + (f" {t('quality.family')}" if published.inherited else ""))
+
             if model in routed:
                 bits.append(t("board.yours"))
             elif model in watched_only:

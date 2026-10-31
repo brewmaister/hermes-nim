@@ -676,6 +676,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(text.splitlines()[0], "NVIDIA NIM")        # title on its own line
         self.assertNotIn("🏢", text)                                 # vendors live in /nim vendor
         self.assertIn("💬 chat models", text)
+        self.assertIn("🧠 1/1 published", text)   # coverage is stated, not faked per row
         self.assertIn("minimax-m3.1-flash", text)
         self.assertIn("🛠 utility models", text)
         self.assertIn("llama-guard-4-12b", text)
@@ -699,6 +700,20 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn("· llama-guard-4-12b (safety classifier)", text)
         self.assertIn("· nemotron-parse-2.0 (document parsing)", text)
         self.assertNotIn("gpt-oss-20b (", text)      # a chat model carries no utility label
+
+    def test_published_coverage_is_stated_and_never_invented(self):
+        """Most models have no published index; the header says how many do, and rows stay honest."""
+        survey = {"at": engine._now_iso(), "listed": 3, "measured": 3, "online": 3}
+        ids = ("nvidia/nemotron-3-ultra-550b-a55b", "meta/muse-glimmer-30b",
+               "poolside/laguna-xs-2.1")
+        report = _fake_report({model: "ok" for model in ids}, catalog=ids, survey=survey)
+        text = render.render_board(report)
+        self.assertIn("🧠 1/3 published", text)
+        score = next(line for line in text.splitlines() if "nemotron-3-ultra" in line)
+        plain = next(line for line in text.splitlines() if "muse-glimmer" in line)
+        self.assertIn("🧠23", score)
+        self.assertNotIn("🧠", plain)             # no score, and no fake one either
+        self.assertNotIn("30B ·", plain)          # the id already says 30b; the row does not repeat it
 
     def test_the_board_survives_a_report_with_no_survey(self):
         report = _fake_report({"a/one": "ok"}, catalog=("a/one",))

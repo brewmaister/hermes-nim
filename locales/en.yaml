@@ -138,6 +138,7 @@ usage:
   cfg: "/nim cfg — which NIM models config.yaml references, no network"
   json: "/nim json — the last scan as JSON"
   tail: "/nim version · /nim help"
+  legend: "glyphs — 🧠 published AA index (only where one exists) · ⚡ first byte · ✍️ tok/s · 🆕 new · ⭐️ pick · ⚠️ degraded · 🔴 dead"
 
 util:
   guard: "safety classifier"
@@ -168,7 +169,7 @@ vendor:
 board:
   title: "NVIDIA NIM"
   stats: "⌛️{age} · 🗒{listed} listed · 🟢 {chat} chat · 🛠 {utility} · 🔴 {offline} offline"
-  section_chat: "💬 chat models"
+  section_chat: "💬 chat models · 🧠 {scored}/{total} published"
   section_utility: "🛠 utility models"
   offline_header: "🔴 {count} offline"
   offline_group: "  · {count} {why}"

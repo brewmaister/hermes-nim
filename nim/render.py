@@ -532,7 +532,9 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(write)
             if model in new:
                 bits.insert(0, NEW_MARK)
-            bits.insert(0, _quality_tag({"model": model}))
+            tag = _quality_tag({"model": model})
+            if tag:                       # never leave an empty "—  · " where a score would go
+                bits.insert(0, tag)
 
             if model in routed:
                 bits.append(t("board.yours"))
@@ -552,7 +554,9 @@ def render_board(report: dict, limit: int = 14) -> str:
             # not a rumour. Everything except the id comes from the same evidence as any other row.
             winner = str(pick.get("model") or "")
             outside = [f"{PICK_MARK} {short_model(winner)}"]
-            outside.append(_quality_tag({"model": winner}))
+            tag = _quality_tag({"model": winner})
+            if tag:
+                outside.append(tag)
             if pick.get("ttft_s") is not None:
                 outside.append(f"{SPEED_MARK}{pick.get('ttft_s')}s")
             write = _write_tag(pick)

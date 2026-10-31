@@ -264,6 +264,16 @@ def _arena_entry(rows: list[dict], bare: str) -> dict | None:
 MISS_TTL_DAYS = 7.0     # how long "this model is not on the leaderboard" stays a fact
 
 
+def absent_recently(key: str, misses: dict[str, str], ttl_days: float = MISS_TTL_DAYS) -> bool:
+    """True when *key* was searched and not found, recently enough to trust the answer.
+
+    Pure so it can be tested without a network seam: the suite stubs `refresh_arena` itself, which
+    means an integration test here would silently measure the stub instead of the rule.
+    """
+    age = _age_days(misses.get(key))
+    return age is not None and age < ttl_days
+
+
 def refresh_arena(names: list[str], *, max_lookups: int = 24, gap: float = 0.25,
                   budget: float = 12.0) -> dict | None:
     """Look up *names* on LMArena and fold the hits into the cache. Never raises.
@@ -292,8 +302,7 @@ def refresh_arena(names: list[str], *, max_lookups: int = 24, gap: float = 0.25,
         key = _norm(bare)
         if not bare or key in models:
             continue
-        age = _age_days(misses.get(key))
-        if age is not None and age < MISS_TTL_DAYS:
+        if absent_recently(key, misses):
             continue                      # asked recently, still absent: do not ask again
         if looked >= max_lookups or time.monotonic() - started > budget:
             break

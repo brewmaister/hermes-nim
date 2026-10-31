@@ -159,20 +159,20 @@ util:
   translat: "traducción"
 
 vendor:
-  title: "NVIDIA NIM · vendedores"
-  stats: "⌛️{age} · 🗒{listed} listados · 🏢{vendors} vendedores"
+  title: "NVIDIA NIM · proveedores"
+  stats: "⌛️{age} · 🗒{listed} listados · 🏢{vendors} proveedores"
   online: "{online}/{listed} en línea"
-  hint: "/nim vendor lee owned_by de /v1/models —el único atributo que publica— y lo cuenta sobre los modelos que respondieron."
+  hint: "/nim vendor lee owned_by de /v1/models —el único atributo que publica— y lo cuenta por proveedor sobre los modelos que respondieron."
 
 board:
   title: "NVIDIA NIM"
-  stats: "⌛️{age} · 🗒{listed} listados · 🟢 {chat} de chat · 🛠 {utility} · 🔴 {offline} caídos"
+  stats: "⌛️{age} · 🗒{listed} listados · 🟢 {chat} chat · 🛠 {utility} · 🔴 {offline} caídos"
   section_chat: "💬 modelos de chat"
   section_utility: "🛠 modelos utilitarios"
   offline_header: "🔴 {count} caídos"
   offline_group: "  · {count} {why}"
-  yours: "tuyo"
-  watching: "vigilado"
+  yours: "en config"
+  watching: "candidato"
   vendors: "🏢 {vendors}"
   new_badge: " · 🆕 {count} nuevos en {days} días"
   hints: "💡 /nim help · /nim probe (rápido) · /nim json (bruto)"

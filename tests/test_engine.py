@@ -210,7 +210,7 @@ class RankTests(unittest.TestCase):
         # model rows stay narrow enough not to wrap twice on a phone (the footer may run longer:
         # it is the one line carrying a full id you would paste into config.yaml)
         rows = [line for line in text.splitlines()
-                if line.startswith(("⭐", "✔", "⚠", "🔴"))
+                if line.startswith(("⭐", "· ", "⚠", "🔴"))
                 and "recommended" not in line]
         self.assertTrue(rows)
         self.assertLess(max(len(row) for row in rows), 70)

@@ -23,7 +23,9 @@ STALE_AFTER_S = 7 * 3600
 
 # Colour + shape per verdict, so a row reads at a glance without parsing words:
 #   🟢 ok ✔️    🟠/⚠️ degraded    🔴 dead    ⭐️ recommended
-MARKS = {"ok": "✔️", "warn": "⚠️", "dead": "🔴"}
+# An answer that works needs no decoration: a middot is enough, and it keeps the eye on the numbers.
+# Only the exceptions get a glyph — ⭐️ the pick, ⚠️ shaky, 🔴 gone.
+MARKS = {"ok": "·", "warn": "⚠️", "dead": "🔴"}
 PICK_MARK = "⭐️"
 
 # One glyph per fact, so a row can be read at a glance instead of parsed:

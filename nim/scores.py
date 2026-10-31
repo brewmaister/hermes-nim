@@ -190,29 +190,31 @@ def fetch_rows() -> list[dict]:
 
 # --------------------------------------------------------------------------- fetch: LMArena
 
-def arena_search(name: str, length: int = 25) -> list[dict]:
-    """Rows for one model name out of the arena dataset.
+def arena_search(name: str, length: int = 25, timeout: float = 20.0) -> list[dict] | None:
+    """Rows for one model name out of the arena dataset; None when the server could not answer.
 
     `/search` is used instead of `/filter`+offset because the latter 500s at most offsets past zero on
-    this 1.2M-row dataset. Retries once: the datasets-server is flaky in a way that is not our bug.
+    this 1.2M-row dataset.
     """
     query = " ".join(str(name).split("/")[-1].replace("-", " ").replace("_", " ").split())
     if not query:
-        return []
+        return []                     # nothing to ask about: a miss, not a failure
     url = f"{ARENA_SEARCH}&query={urllib.parse.quote(query)}&offset=0&length={length}"
     last: Exception | None = None
-    # Two attempts of 20 s, not three of 45: this runs inside a survey the user is waiting on, and a
-    # datasets-server that 500s twice in a row is not going to answer on the third.
-    for attempt in range(2):
-        try:
-            payload = json.loads(_get_text(url, timeout=20.0))
-            rows = [row.get("row") or {} for row in (payload.get("rows") or [])]
-            return [row for row in rows if str(row.get("category") or "overall") == "overall"]
-        except Exception as exc:  # noqa: BLE001
-            last = exc
-            time.sleep(1.0 + attempt)
+    # One attempt, bounded by what is left of the caller's budget. A second attempt at a server that
+    # just 500'd doubled the worst case inside a survey somebody is waiting on, and the models this
+    # runs for are the ones least likely to be on the board. Failure returns None (could not ask) so
+    # it is never mistaken for [] ("asked, not there") — the two get different TTLs.
+    if timeout <= 1.0:
+        return None
+    try:
+        payload = json.loads(_get_text(url, timeout=timeout))
+        rows = [row.get("row") or {} for row in (payload.get("rows") or [])]
+        return [row for row in rows if str(row.get("category") or "overall") == "overall"]
+    except Exception as exc:  # noqa: BLE001
+        last = exc
     logger.warning("hermes-nim: arena search for %r failed: %s", name, last)
-    return []
+    return None
 
 
 def _contains_either_way(candidate: set[str], tokens: set[str]) -> bool:
@@ -262,6 +264,7 @@ def _arena_entry(rows: list[dict], bare: str) -> dict | None:
 
 
 MISS_TTL_DAYS = 7.0     # how long "this model is not on the leaderboard" stays a fact
+ERROR_TTL_DAYS = 0.5    # how long a failed lookup is left alone before trying again
 
 
 def absent_recently(key: str, misses: dict[str, str], ttl_days: float = MISS_TTL_DAYS) -> bool:
@@ -294,6 +297,7 @@ def refresh_arena(names: list[str], *, max_lookups: int = 24, gap: float = 0.25,
     arena = dict(cache.get("arena") or {})
     models: dict[str, dict] = dict(arena.get("models") or {})
     misses: dict[str, str] = dict(arena.get("misses") or {})
+    errors: dict[str, str] = dict(arena.get("errors") or {})
 
     looked = 0
     started = time.monotonic()
@@ -302,21 +306,27 @@ def refresh_arena(names: list[str], *, max_lookups: int = 24, gap: float = 0.25,
         key = _norm(bare)
         if not bare or key in models:
             continue
-        if absent_recently(key, misses):
-            continue                      # asked recently, still absent: do not ask again
-        if looked >= max_lookups or time.monotonic() - started > budget:
-            break
+        if absent_recently(key, misses) or absent_recently(key, errors, ERROR_TTL_DAYS):
+            continue                      # asked recently: absent, or the server was down
+        remaining = budget - (time.monotonic() - started)
+        if looked >= max_lookups or remaining <= 1.0:
+            break                         # no budget left to start another request
         looked += 1
-        entry = _arena_entry(arena_search(bare), bare)
-        if entry is not None:
-            models[key] = entry
-            misses.pop(key, None)
+        rows = arena_search(bare, timeout=min(20.0, remaining))
+        if rows is None:
+            errors[key] = _now()          # could not ask — retry tomorrow, not in seven days
         else:
-            misses[key] = _now()
+            entry = _arena_entry(rows, bare)
+            if entry is not None:
+                models[key] = entry
+                misses.pop(key, None)
+                errors.pop(key, None)
+            else:
+                misses[key] = _now()
         if gap:
             time.sleep(gap)
     if looked:
-        arena = {"models": models, "misses": misses, "fetched_at": _now(),
+        arena = {"models": models, "misses": misses, "errors": errors, "fetched_at": _now(),
                  "published": _now()[:10], "count": len(models)}
         cache = {**cache, "arena": arena}
         _write(cache)

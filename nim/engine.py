@@ -804,9 +804,12 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
                 if current.arena_scores:
                     # Only the models this board can star or score: a search per catalog id would be
                     # 85 requests to learn that NVIDIA's nemotrons are not on LMArena (they are not).
-                    names = sorted(set(previous.get("configured_in") or {})
-                                   | {model for model, verdict in (previous.get("models") or {}).items()
-                                      if verdict.get("status") == "ok"})
+                    candidates = set(previous.get("configured_in") or {}) | {
+                        model for model, verdict in (previous.get("models") or {}).items()
+                        if verdict.get("status") == "ok"}
+                    # Chat models only: a safety classifier or an embedding id has never been on a
+                    # chat leaderboard, and each pointless lookup costs up to the whole refresh budget.
+                    names = sorted(model for model in candidates if capability(model) == "chat")
                     scores.refresh_arena(names)
         except Exception:  # noqa: BLE001 - a stale prior must not fail a scan
             pass

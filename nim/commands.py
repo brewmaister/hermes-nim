@@ -65,7 +65,9 @@ def do_scan(*, attempts: int | None = None, workers: int | None = None,
         ttft=current.ttft_seconds,
         attempts=current.attempts if attempts is None else attempts,
         stagger=current.stagger_seconds,
-        extra=current.shortlist_models(),
+        # `only` means exactly those: mixing in the shortlist turned `/nim probe minimax` into
+        # "minimax plus your seven candidates", which is how a one-model question took 45 s.
+        extra=None if only is not None else current.shortlist_models(),
         configured_dir=current.state_dir,
         recheck_ttft=current.recheck_ttft_seconds,
         workers=workers,

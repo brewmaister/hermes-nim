@@ -55,9 +55,9 @@ role:
 
 rec:
   tier: "tier {tier}"
-  line: "⭐️ recommended {model} — {evidence}"
-  none: "⭐️ recommended nothing — no model answered every attempt"
-  none_slow: "⭐️ recommended nothing under {cap}s — the healthy models are all slower than that right now"
+  line: "→ best for chat: {model} — {evidence}"
+  none: "→ no pick — no model answered every attempt"
+  none_slow: "→ no pick under {cap}s — the healthy models are all slower than that right now"
   ctx: "{ctx} ctx"
 
 foot:
@@ -139,7 +139,7 @@ usage:
   cfg: "/nim cfg — which NIM models config.yaml references, no network"
   json: "/nim json — the last scan as JSON"
   tail: "/nim version · /nim help"
-  legend: "glyphs — 🧠 Hermes Index · 🏛 LMArena Elo (other scale, never mixed) · ⚡ first byte · ✍️ tok/s · 🆕 new · ⭐️ pick · ⚠️ degraded · 🔴 dead"
+  legend: "glyphs — 🥇🥈🥉 top three in list order · 🧠 Hermes Index · 🏛 LMArena Elo (other scale, never mixed) · ⚡ first byte · ✍️ tok/s · 🆕 new · ⚠️ degraded · 🔴 dead"
 
 util:
   guard: "safety classifier"
@@ -210,7 +210,7 @@ settings:
   recheck: "· recheck_ttft_seconds: {value} (a model already marked dead is only asked for a byte for this long; 0 = use ttft_seconds)"
   live_attempts: "· live_attempts: {value} (interactive /nim; /nim probe uses {attempts})"
   survey: "· survey_catalog: {value} (every /nim measures all listed models; {workers} workers, {cap}s cap)"
-  recommend: "· recommend_max_ttft_s: {value}s · recommend_min_tps: {tps} (the ⭐️ gate: a model must answer this fast, and a scored one must write this quickly to keep the top tier)"
+  recommend: "· recommend_max_ttft_s: {value}s · recommend_min_tps: {tps} (the pick's gate: a model must answer this fast, and a scored one must write this quickly to keep the top tier)"
   scores: "· scores_refresh: {value} · arena_scores: {arena} (a survey re-reads the Hermes Index when older than {hours}h, and fills gaps from LMArena)"
   order: "· order_by: {value} (chat list order: arena = 🏛 Elo, index = 🧠 agentic, speed = ✍️ measured; unrated models sort last)"
   language: "· language: {value} (auto follows display.language; en/es shipped)"

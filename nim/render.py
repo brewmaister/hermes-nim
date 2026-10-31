@@ -26,7 +26,11 @@ STALE_AFTER_S = 7 * 3600
 # An answer that works needs no decoration: a middot is enough, and it keeps the eye on the numbers.
 # Only the exceptions get a glyph — ⭐️ the pick, ⚠️ shaky, 🔴 gone.
 MARKS = {"ok": "·", "warn": "⚠️", "dead": "🔴"}
-PICK_MARK = "⭐️"
+# Medals mark the top three of the displayed order, not a separate "pick": with one source leading the
+# list, position IS the ranking, and a star that could disagree with the list needed a paragraph of
+# explanation every time. 🥇🥈🥉 say the same thing without a glossary.
+MEDALS = ("🥇", "🥈", "🥉")
+PICK_MARK = MEDALS[0]
 
 # One glyph per fact, so a row can be read at a glance instead of parsed:
 #   🧠 published benchmark index   ⚡ time to first byte
@@ -252,17 +256,17 @@ def new_models(report: dict, days: float = NEW_WINDOW_DAYS) -> set[str]:
     return set(engine.added_ids(report, days))
 
 
-def _line(result: dict, used: dict[str, list[str]], recommended: bool = False,
+def _line(result: dict, used: dict[str, list[str]], medal: str | None = None,
           new: set[str] | None = None) -> str:
     """One model, one line: mark, short name, then the facts, separated by middots.
 
-    The recommended row says so in words and drops its config role: showing `⭐️ … · shortlist` told
-    the reader "candidate" next to the star, which contradicts the star. One row, one claim.
+    A medal row drops its config role — `🥇 … · shortlist` read as two contradictory claims about the
+    same model. Position in the list is the ranking; the role belongs to the rows below the podium.
     """
     fresh = NEW_MARK if new and result["model"] in new else ""
     bits = [bit for bit in (fresh, _quality_tag(result), _speed_tag(result), _write_tag(result),
-                            t("role.recommended") if recommended else _roles(result, used)) if bit]
-    mark = PICK_MARK if recommended else MARKS.get(engine.severity(result), "·")
+                            "" if medal else _roles(result, used)) if bit]
+    mark = medal or MARKS.get(engine.severity(result), "·")
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
 
 
@@ -273,11 +277,10 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     # Ranked best-first on evidence: published benchmark index, else the parameter count in the id,
     # then attempts-answered, then measured latency. Exactly one model carries the star — and it is
     # not always the top of the list, because a 40 s first byte is not a recommendation.
-    pick = engine.recommended(report)
-    pick_model = pick.get("model") if pick else None
     new = new_models(report)
-    for result in sorted(alive, key=engine.rank_key):
-        lines.append(_line(result, used, recommended=result["model"] == pick_model, new=new))
+    for position, result in enumerate(sorted(alive, key=engine.rank_key)):
+        medal = MEDALS[position] if position < len(MEDALS) else None
+        lines.append(_line(result, used, medal=medal, new=new))
     for group in (warn, dead):
         if group:
             lines.append("")   # a blank line is cheaper than a header row
@@ -515,7 +518,7 @@ def render_board(report: dict, limit: int = 14) -> str:
         # No coverage counters and no "sorted by" note: the glyph on each row already says which table
         # its number came from, and a section header is a label, not a provenance report.
         lines.append(t("board.section_chat"))
-        for model in chat[:limit]:
+        for position, model in enumerate(chat[:limit]):
             verdict = alive[model]
             bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]
             write = _write_tag(verdict)
@@ -531,11 +534,11 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.append(t("board.yours"))
             elif model in watched_only:
                 bits.append(t("board.watching"))
-            elif model == pick_model:
-                # The winner is not in your config: that is the one thing a star row must not hide,
-                # because using it is a config edit, not a switch.
+            elif position < len(MEDALS):
+                # A podium model you do not route to: using it is a config edit, not a switch, and a
+                # medal row must not hide that.
                 bits.append(t("board.pick_unconfigured"))
-            mark = PICK_MARK if model == pick_model else MARKS["ok"]
+            mark = MEDALS[position] if position < len(MEDALS) else MARKS["ok"]
             lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
         if len(chat) > limit:
             lines.append(t("foot.more", hidden=len(chat) - limit))

@@ -209,18 +209,18 @@ class RankTests(unittest.TestCase):
             report["models"][model]["ttft_s"] = 0.5
         with install_scores():
             text = render.render_cached(report)
-        # one line per model, org prefix dropped, the top pick marked with a star
-        first_model = next(line for line in text.splitlines() if line.startswith("⭐"))
+        # one line per model, org prefix dropped, the podium marked with medals
+        first_model = next(line for line in text.splitlines() if line.startswith("🥇"))
         # minimax carries a published AA index (29) and nemotron a lower one (23), so the published
         # score outranks the bigger parameter count — this is the case the size prior got wrong.
         self.assertIn("minimax-m3.1-flash", first_model)
         self.assertNotIn("minimaxai/", first_model)
-        self.assertIn("⭐️ recommended minimaxai/minimax-m3.1-flash", text)
+        self.assertIn("→ best for chat: minimaxai/minimax-m3.1-flash", text)
         # model rows stay narrow enough not to wrap twice on a phone (the footer may run longer:
         # it is the one line carrying a full id you would paste into config.yaml)
         rows = [line for line in text.splitlines()
-                if line.startswith(("⭐", "· ", "⚠", "🔴"))
-                and "recommended" not in line]
+                if line.startswith(("🥇", "🥈", "🥉", "· ", "⚠", "🔴"))
+                and "best for chat" not in line]
         self.assertTrue(rows)
         self.assertLess(max(len(row) for row in rows), 70)
 
@@ -359,11 +359,11 @@ class BenchmarkPriorTests(unittest.TestCase):
                                              "ok_attempts": 0, "attempts": 2, "ttft_s": None,
                                              "trials": []}}}
         self.assertIsNone(engine.recommended(report))
-        self.assertIn("nothing", render.best_line(report))
+        self.assertIn("no pick", render.best_line(report))
 
     def test_best_line_says_so_when_nothing_is_healthy(self):
         report = _fake_report({"a/model-30b": "stall"})
-        self.assertIn("nothing", render.best_line(report))
+        self.assertIn("no pick", render.best_line(report))
 
 
 class MedianTests(unittest.TestCase):
@@ -693,23 +693,23 @@ class EmojiFormatTests(unittest.TestCase):
         text = render.render_cached(report)
         self.assertIn("board: 3 listed · not surveyed yet", text)
 
-    def test_the_star_row_says_recommended_instead_of_its_config_role(self):
+    def test_a_medal_row_drops_its_config_role(self):
         report = self._report()
         report["configured_in"] = {"minimaxai/minimax-m3.1-flash": ["shortlist"]}
-        star = next(line for line in render.render_cached(report).splitlines()
-                    if line.startswith("⭐"))
-        self.assertIn("recommended", star)
-        self.assertNotIn("shortlist", star)   # one row, one claim
+        podium = next(line for line in render.render_cached(report).splitlines()
+                      if line.startswith(("🥇", "🥈", "🥉")))
+        self.assertNotIn("shortlist", podium)   # one row, one claim
+        self.assertNotIn("in config", podium)
 
-    def test_the_star_row_is_spanish_too(self):
+    def test_the_pick_line_is_spanish_too(self):
         from nim import i18n
 
         report = self._report()
         with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
             i18n.reset_cache()
-            star = next(line for line in render.render_cached(report).splitlines()
-                        if line.startswith("⭐"))
-        self.assertIn("recomendado", star)
+            text = render.render_cached(report)
+            self.assertIn("mejor para chat", text)
+            self.assertIn("🥇", text)
 
     def test_the_title_is_plain_text_and_has_no_glyph(self):
         """Plugin output is delivered as plain text: `**bold**` reaches the reader as asterisks."""
@@ -949,7 +949,7 @@ class LocalizationTests(unittest.TestCase):
             i18n.reset_cache()
             text = render.render_cached(self._report())
         self.assertIn("modelos", text)
-        self.assertIn("recomendado", text)
+        self.assertIn("mejor para chat", text)
         self.assertIn("colgado", text)        # status.stalled
         self.assertIn("respaldo 1", text)     # role.fallback
         self.assertNotIn("recommended", text)
@@ -1264,7 +1264,7 @@ def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,
 class RenderTests(unittest.TestCase):
     def test_cached_names_models_and_age(self):
         text = render.render_cached(_fake_report({"a": "ok", "b": "stall"}))
-        self.assertIn("⭐️ a — ⚡0.5s", text)
+        self.assertIn("🥇 a — ⚡0.5s", text)
         self.assertIn("🔴 b — stalled", text)
         self.assertIn("2 models", text)
 
@@ -1286,7 +1286,7 @@ class RenderTests(unittest.TestCase):
                 mock.patch.object(engine, "primary_source", return_value="lmarena"):
             text = render.render_board(report)
         self.assertIn("🏛1445", text)
-        self.assertIn("⭐️ nemotron-3-ultra-550b-a55b", text)
+        self.assertIn("🥇 nemotron-3-ultra-550b-a55b", text)
 
     def test_the_star_may_point_outside_your_config(self):
         """A scored model you do not route to still wins the star — named, with the cost of using it."""
@@ -1298,12 +1298,12 @@ class RenderTests(unittest.TestCase):
         with install_scores(), mock.patch.object(engine, "primary_source", return_value="hermes"):
             text = render.render_board(report)
         # the scored model wins even though the config points elsewhere...
-        self.assertIn("⭐️ nemotron-3.5-super-vl-120b-a12b — 🧠24.1 family", text)
+        self.assertIn("🥇 nemotron-3.5-super-vl-120b-a12b — 🧠24.1 family", text)
         # ...and the star row says that using it means editing config
-        star_row = next(line for line in text.splitlines() if line.startswith("⭐️"))
+        star_row = next(line for line in text.splitlines() if line.startswith("🥇"))
         self.assertIn("not in config", star_row)
-        # the model you do route to is still listed, just without the star
-        self.assertIn("· nemotron-3-ultra-550b-a55b", text)
+        # the model you do route to is still listed, just below the podium's top step
+        self.assertIn("🥈 nemotron-3-ultra-550b-a55b", text)
 
     def test_a_stale_scan_says_so_in_the_header(self):
         from datetime import datetime, timedelta, timezone

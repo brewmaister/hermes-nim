@@ -442,26 +442,13 @@ def render_board(report: dict, limit: int = 14) -> str:
     pick_model = pick.get("model") if pick else None
     new = new_models(report)
 
-    header = t("board.header", age=human_age(engine.scan_age_seconds({"run_at": survey.get("at")}))
-               if survey else t("catalog.never_surveyed"), listed=len(catalog))
-    counts = t("board.counts", chat=len(chat), utility=len(utility), offline=len(offline))
+    age = (human_age(engine.scan_age_seconds({"run_at": survey.get("at")}))
+           if survey else t("catalog.never_surveyed"))
+    stats = t("board.stats", age=age, listed=len(catalog), chat=len(chat),
+              utility=len(utility), offline=len(offline))
     if new:
-        counts += t("board.new_badge", count=len(new), days=f"{NEW_WINDOW_DAYS:g}")
-    lines = [header, counts]
-    # Who is actually serving you, counted over the models that answered — the vendor field is the one
-    # attribute /v1/models offers, and it turns "13 models are down" into "one lab is down".
-    vendors: dict[str, int] = {}
-    owners = report.get("catalog_owners") or {}
-    for model in list(chat) + list(utility):
-        vendor = (owners.get(model) or "").strip() or "?"
-        vendors[vendor] = vendors.get(vendor, 0) + 1
-    if vendors:
-        top = sorted(vendors.items(), key=lambda item: (-item[1], item[0]))[:4]
-        rendered = " · ".join(f"{name} {count}" for name, count in top)
-        if len(vendors) > len(top):
-            rendered += " …"
-        lines.append(t("board.vendors", vendors=rendered))
-    lines.append("")
+        stats += t("board.new_badge", count=len(new), days=f"{NEW_WINDOW_DAYS:g}")
+    lines = [t("board.title"), stats, ""]
 
     if chat:
         lines.append(t("board.section_chat"))
@@ -503,6 +490,57 @@ def render_board(report: dict, limit: int = 14) -> str:
         for status, count in sorted(counts.items(), key=lambda item: -item[1]):
             lines.append(t("board.offline_group", count=count, why=metrics({"status": status})))
     lines += ["", t("board.hints")]
+    return "\n".join(lines)
+
+
+def render_vendors(report: dict, limit: int = 14) -> str:
+    """Who publishes what you can actually call — and how fast their models write.
+
+    Its own verb because it answers a different question than the board: not "what can I use now" but
+    "whose infrastructure am I depending on, and is any one of them better".
+    """
+    if not report:
+        return t("empty.no_scan_catalog")
+    models = report.get("models") or {}
+    catalog = report.get("catalog") or []
+    owners = report.get("catalog_owners") or {}
+    if not catalog:
+        return t("empty.no_scan_catalog")
+    survey = report.get("survey") or {}
+    age = (human_age(engine.scan_age_seconds({"run_at": survey.get("at")}))
+           if survey else t("catalog.never_surveyed"))
+
+    rows: dict[str, dict] = {}
+    for model in catalog:
+        vendor = (owners.get(model) or "").strip() or "?"
+        entry = rows.setdefault(vendor, {"listed": 0, "online": 0, "ttft": [], "tps": []})
+        entry["listed"] += 1
+        verdict = models.get(model) or {}
+        if verdict.get("status") == "ok":
+            entry["online"] += 1
+            if isinstance(verdict.get("ttft_s"), (int, float)):
+                entry["ttft"].append(verdict["ttft_s"])
+            if isinstance(verdict.get("tps"), (int, float)):
+                entry["tps"].append(verdict["tps"])
+
+    def median(values: list[float]) -> float | None:
+        return sorted(values)[len(values) // 2] if values else None
+
+    ordered = sorted(rows.items(), key=lambda item: (-item[1]["online"], -item[1]["listed"]))
+    lines = [t("vendor.title"), t("vendor.stats", age=age, listed=len(catalog),
+                                   vendors=len(rows)), ""]
+    for vendor, entry in ordered[:limit]:
+        bits = [t("vendor.online", online=entry["online"], listed=entry["listed"])]
+        ttft = median(entry["ttft"])
+        if ttft is not None:
+            bits.append(f"{SPEED_MARK}{ttft:g}s")
+        tps = median(entry["tps"])
+        if tps is not None:
+            bits.append(f"{WRITE_MARK}{tps:g}t/s")
+        lines.append(f"🏢 {vendor} — " + " · ".join(bits))
+    if len(ordered) > limit:
+        lines.append(t("foot.more", hidden=len(ordered) - limit))
+    lines += ["", t("vendor.hint")]
     return "\n".join(lines)
 
 

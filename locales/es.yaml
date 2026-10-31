@@ -130,6 +130,7 @@ usage:
   probe: "/nim probe — escaneo en vivo de los modelos de tu config + candidatos\n            (~30-60 s: un modelo que nunca responde cuesta dos esperas de 25 s)"
   speed: "/nim speed [n] — escaneo cronometrado: primer byte y respuesta completa, mediana de n intentos (3 por defecto)"
   catalog: "/nim catalog — el tablero en línea/caído: lo que NVIDIA lista vs lo que responde"
+  vendor: "/nim vendor — quién publica lo que responde, con latencia y velocidad medianas"
   survey: "/nim survey — mide todos los modelos listados ahora (~1 min); el vigilante de 6h también"
   dead: "/nim dead — todo lo que no sirve ahora"
   added: "/nim added [días] — modelos que aparecieron recientemente (7 por defecto)"
@@ -157,9 +158,15 @@ util:
   classif: "clasificador"
   translat: "traducción"
 
+vendor:
+  title: "NVIDIA NIM · vendedores"
+  stats: "⌛️{age} · 🗒{listed} listados · 🏢{vendors} vendedores"
+  online: "{online}/{listed} en línea"
+  hint: "/nim vendor lee owned_by de /v1/models —el único atributo que publica— y lo cuenta sobre los modelos que respondieron."
+
 board:
-  header: "NVIDIA NIM · medido {age} · {listed} listados"
-  counts: "🟢 {chat} de chat · 🛠 {utility} · 🔴 {offline} caídos"
+  title: "NVIDIA NIM"
+  stats: "⌛️{age} · 🗒{listed} listados · 🟢 {chat} de chat · 🛠 {utility} · 🔴 {offline} caídos"
   section_chat: "💬 modelos de chat"
   section_utility: "🛠 modelos utilitarios"
   offline_header: "🔴 {count} caídos"

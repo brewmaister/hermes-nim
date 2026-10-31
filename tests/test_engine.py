@@ -487,7 +487,8 @@ class LiveDefaultTests(unittest.TestCase):
             text, code = commands.dispatch("", [])
         survey.assert_called_once()
         self.assertEqual(code, 0)
-        self.assertIn("surveyed", text)
+        self.assertIn("🗒1 listed", text)      # the stats line proves the survey path ran
+        self.assertIn("⌛️", text)
 
     def test_live_default_off_restores_the_old_behaviour(self):
         with mock.patch.object(commands.settings,
@@ -671,7 +672,9 @@ class CapabilityTests(unittest.TestCase):
                                "nvidia/nemotron-parse": "not_provisioned"},
                               catalog=ids, survey=survey)
         text = render.render_board(report)
-        self.assertIn("🟢 1 chat · 🛠 1 · 🔴 2 offline", text)
+        self.assertIn("🟢 1 chat · 🛠 1 · 🔴 2 offline", text)      # stats line
+        self.assertEqual(text.splitlines()[0], "NVIDIA NIM")        # title on its own line
+        self.assertNotIn("🏢", text)                                 # vendors live in /nim vendor
         self.assertIn("💬 chat models", text)
         self.assertIn("minimax-m3.1-flash", text)
         self.assertIn("🛠 utility models", text)
@@ -733,7 +736,21 @@ class ResponseDataTests(unittest.TestCase):
             result = engine.probe("http://x", "a/model", "k", ttft=1, attempts=1)
         self.assertEqual(result["req_id"], "abcdef12-3456")
 
-    def test_the_board_shows_speed_vendors_and_tier(self):
+    def test_vendors_have_their_own_view(self):
+        survey = {"at": engine._now_iso(), "listed": 3, "measured": 3, "online": 2}
+        ids = ("openai/gpt-oss-20b", "nvidia/a", "meta/thing")
+        report = _fake_report({"openai/gpt-oss-20b": "ok", "nvidia/a": "ok",
+                               "meta/thing": "not_provisioned"}, catalog=ids, survey=survey)
+        report["models"]["openai/gpt-oss-20b"].update({"ttft_s": 0.4, "tps": 40.0})
+        report["models"]["nvidia/a"].update({"ttft_s": 0.6, "tps": 20.0})
+        report["catalog_owners"] = {"openai/gpt-oss-20b": "openai", "nvidia/a": "nvidia",
+                                    "meta/thing": "meta"}
+        text = render.render_vendors(report)
+        self.assertIn("NVIDIA NIM · vendors", text)
+        self.assertIn("🏢 openai — 1/1 online · ⚡0.4s · ✍️40t/s", text)
+        self.assertIn("🏢 meta — 0/1 online", text)
+
+    def test_the_board_shows_speed_and_tier(self):
         survey = {"at": engine._now_iso(), "listed": 2, "measured": 2, "online": 2}
         report = _fake_report({"openai/gpt-oss-20b": "ok", "nvidia/nemotron-3-ultra-550b-a55b": "ok"},
                               catalog=("openai/gpt-oss-20b",
@@ -745,7 +762,6 @@ class ResponseDataTests(unittest.TestCase):
                                     "nvidia/nemotron-3-ultra-550b-a55b": "nvidia"}
         text = render.render_board(report)
         self.assertIn("✍️41.5t/s", text)
-        self.assertIn("🏢 nvidia 1 · openai 1", text)
         self.assertIn("tier default", render.best_line(report))
 
     def test_a_dead_row_carries_the_id_you_can_quote_to_support(self):

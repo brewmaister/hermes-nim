@@ -168,15 +168,15 @@ def reset_cache() -> None:
     _resolve.cache_clear()
 
 
-# No markdown in this plugin's output (it reaches the reader as plain text), so "bold" is a Unicode
-# trick: mathematical sans-serif bold renders as heavy text in every client without any formatting.
-BOLD_BRAND = "𝗡𝗜𝗩𝗜𝗗𝗜𝗔 𝗡𝗜𝗠"
 PLAIN_BRAND = "NVIDIA NIM"
+# Plain title, by request: the Unicode-bold trick (𝗡𝗜𝗩𝗜𝗗𝗜𝗔 𝗡𝗜𝗠) rendered heavy but read as a
+# different word, and a header that looks like a logo is worse than one you can grep for.
+BOLD_BRAND = PLAIN_BRAND
 
 
 def _brand(text: str) -> str:
-    """Every string that names the plugin gets the heavy weight, one place, no per-key bookkeeping."""
-    return text.replace(PLAIN_BRAND, BOLD_BRAND)
+    """Hook kept so every string that names the plugin passes through one place."""
+    return text
 
 
 def t(key: str, *, lang: str | None = None, **fields) -> str:

@@ -71,7 +71,9 @@ def markdown_v2(text: str) -> str:
                 or stripped in ("glyphs", "glifos"):
             lines.append(f"*{_escape_mdv2(stripped)}*")
             continue
-        found = re.match(r"(\s*)(/nim(?:\s+[^\s<\[]+)?(?:\s+(?:<[^>]+>|\[[^\]]+\]))?)(.*)$", raw)
+        # A single space joins a verb to /nim; the alignment padding is many, and swallowing it made
+        # the first row read "/nim    measure" as one code span.
+        found = re.match(r"(\s*)(/nim(?: [^\s<\[]+)?(?: (?:<[^>]+>|\[[^\]]+\]))?)(.*)$", raw)
         if found:
             indent, command, rest = found.groups()
             lines.append(f"{indent}`{command}`{_escape_mdv2(rest)}")

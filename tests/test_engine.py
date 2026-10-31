@@ -22,9 +22,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nim import commands, engine, i18n, render, watch  # noqa: E402
 
-# A survey refreshes the quality prior from the network. The suite must not, so the fetch is stubbed
-# for the whole module: tests that care about scoring use `install_scores()` explicitly.
+# A survey refreshes the quality prior from the network. The suite must not, so both fetches are
+# stubbed for the whole module: tests that care about scoring use `install_scores()` explicitly.
+# Forgetting the arena one made the suite take 269 s — 85 live /search requests behind the tests.
 mock.patch("nim.scores.maybe_refresh", return_value=None).start()
+mock.patch("nim.scores.refresh_arena", return_value=None).start()
 
 
 class FakeResponse(io.BytesIO):
@@ -768,7 +770,8 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(text.splitlines()[0], "NVIDIA NIM")        # title on its own line
         self.assertNotIn("🏢", text)                                 # vendors live in /nim vendor
         self.assertIn("💬 chat models", text)
-        self.assertIn("🧠 1/1 published", text)   # coverage is stated, not faked per row
+        self.assertIn("🧠 1/1 index", text)       # coverage is stated, not faked per row
+        self.assertIn("🏛 0/1 arena", text)
         self.assertIn("minimax-m3.1-flash", text)
         self.assertIn("🛠 utility models", text)
         self.assertIn("llama-guard-4-12b", text)
@@ -801,7 +804,7 @@ class CapabilityTests(unittest.TestCase):
         report = _fake_report({model: "ok" for model in ids}, catalog=ids, survey=survey)
         with install_scores():
             text = render.render_board(report)
-        self.assertIn("🧠 1/3 published", text)
+        self.assertIn("🧠 1/3 index", text)
         score = next(line for line in text.splitlines() if "nemotron-3-ultra" in line)
         plain = next(line for line in text.splitlines() if "muse-glimmer" in line)
         self.assertIn("🧠18.4", score)
@@ -1226,12 +1229,12 @@ SCORES_FIXTURE = {
     "published": "2026-10-30",
     "count": 3,
     "models": {
-        "minimaxm3": {"value": 21.5, "rank": 11, "name": "MiniMax M3", "org": "MiniMax",
-                      "cost": 0.11},
-        "nemotron3ultra550ba55b": {"value": 18.4, "rank": 15, "name": "Nemotron 3 Ultra",
-                                   "org": "NVIDIA", "cost": None},
-        "nemotronsuper35": {"value": 24.1, "rank": 17, "name": "Nemotron Super 3.5",
+        "nemotronsuper35": {"value": 24.1, "rank": 4, "name": "Nemotron Super 3.5",
                             "org": "NVIDIA", "cost": 0.42},
+        "minimaxm3": {"value": 21.5, "rank": 6, "name": "MiniMax M3", "org": "MiniMax",
+                      "cost": 0.11},
+        "nemotron3ultra550ba55b": {"value": 18.4, "rank": 9, "name": "Nemotron 3 Ultra",
+                                   "org": "NVIDIA", "cost": None},
     },
 }
 
@@ -1266,6 +1269,26 @@ class RenderTests(unittest.TestCase):
         self.assertIn("🔴 b — stalled", text)
         self.assertIn("2 models", text)
 
+    def test_arena_leads_when_asked_to_order_by_it(self):
+        """order_by decides both the list order and the star — they must never disagree."""
+        report = _fake_report({"nvidia/nemotron-3-ultra-550b-a55b": "ok"}, catalog=(
+            "nvidia/nemotron-3-ultra-550b-a55b",))
+        arena = {"version": 4, "fetched_at": engine._now_iso(), "published": "2026-10-31",
+                 "count": 2, "models": {},
+                 "arena": {"published": "2026-10-31", "count": 2, "models": {
+                     "nemotron3ultra550ba55b": {"value": 1445.0, "rank": 63, "inherited": True,
+                                                "name": "NVIDIA-Nemotron-3-Ultra-550B-A55B (NVFP4)",
+                                                "org": "nvidia"},
+                     "nemotronsuper35": {"value": 99.9, "rank": 1, "inherited": False,
+                                         "name": "Nemotron Super 3.5", "org": "nvidia"}}}}
+        from nim import scores as scores_module
+
+        with mock.patch.object(scores_module, "load", return_value=arena), \
+                mock.patch.object(engine, "primary_source", return_value="lmarena"):
+            text = render.render_board(report)
+        self.assertIn("🏛1445", text)
+        self.assertIn("⭐️ nemotron-3-ultra-550b-a55b", text)
+
     def test_the_star_may_point_outside_your_config(self):
         """A scored model you do not route to still wins the star — named, with the cost of using it."""
         report = _fake_report({
@@ -1273,7 +1296,7 @@ class RenderTests(unittest.TestCase):
             "nvidia/nemotron-3-ultra-550b-a55b": "ok",          # unscored, the one you route to
         }, catalog=("nvidia/nemotron-3.5-super-vl-120b-a12b", "nvidia/nemotron-3-ultra-550b-a55b"))
         report["configured_in"] = {"nvidia/nemotron-3-ultra-550b-a55b": ["fallback_providers[0]"]}
-        with install_scores():
+        with install_scores(), mock.patch.object(engine, "primary_source", return_value="hermes"):
             text = render.render_board(report)
         # the scored model wins even though the config points elsewhere...
         self.assertIn("⭐️ nemotron-3.5-super-vl-120b-a12b — 🧠24.1 family", text)

@@ -59,6 +59,13 @@ class Settings:
     recommend_max_ttft_s: float = 5.0
     recommend_min_tps: float = 25.0
     scores_refresh: bool = True
+    # Second opinion, never a blended number: LMArena (🏛, Elo) fills in where the Hermes Index (🧠)
+    # has no row. Each keeps its own glyph, its own scale and its own publish date.
+    arena_scores: bool = True
+    # What the chat list is sorted by: "arena" (🏛 Elo — widest coverage), "index" (🧠 agentic),
+    # or "speed" (measured ✍️). Models the chosen source does not rate sort below the ones it does,
+    # so two scales never interleave in one column.
+    order_by: str = "arena"
     scores_max_age_hours: float = 24.0
     # "auto" follows NIM_LANGUAGE → HERMES_LANGUAGE → display.language; or pin "en"/"es".
     language: str = "auto"
@@ -222,7 +229,9 @@ def describe() -> str:
           cap=f"{current.survey_ttft_seconds:g}"),
         t("settings.recommend", value=f"{current.recommend_max_ttft_s:g}",
           tps=f"{current.recommend_min_tps:g}"),
-        t("settings.scores", value=current.scores_refresh, hours=f"{current.scores_max_age_hours:g}"),
+        t("settings.scores", value=current.scores_refresh, hours=f"{current.scores_max_age_hours:g}",
+          arena=current.arena_scores),
+        t("settings.order", value=current.order_by),
         t("settings.language", value=current.language),
     ]
     return "\n".join(lines)

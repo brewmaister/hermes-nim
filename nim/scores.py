@@ -3,21 +3,31 @@
 `benchmarks.py` used to hold three hand-typed Artificial Analysis numbers. Accurate the day they were
 written, silently wrong afterwards, and the only part of this plugin that was not mechanical.
 
-The prior now comes from the **Hermes Index** — portal.nousresearch.com/bench, an agentic index (task
-completion and cost per task, measured inside Hermes Agent). It is server-rendered HTML, so this module
-parses the leaderboard table, caches it to disk with a fetch timestamp, and a survey refetches it when
-the cache is old.
+Two sources now, each on its own scale, each with its own glyph, never averaged:
 
-One source on purpose. LMArena was wired in alongside it for a while and removed: two leaderboards mean
-two scales, and a board that shows `24.1` next to `1431` is asking the reader to do arithmetic that
-does not exist. Percentiles papered over it; one source is honest.
+* **Hermes Index** (`🧠`) — portal.nousresearch.com/bench, an agentic index (task completion and cost
+  per task, measured inside Hermes Agent). Server-rendered HTML, 18 models. Covers the NVIDIA line;
+  blind to MiniMax and Mistral.
+* **LMArena** (`🏛`) — the public leaderboard dataset, queried by name through the datasets-server
+  `/search` endpoint. ~420 rated models. The reverse: it rates MiniMax, Mistral, Muse, GPT-OSS, and
+  rates no Nemotron at all.
 
-What is not mechanical, and is therefore labelled on screen: matching a NIM id to a leaderboard name.
-Exact normalised match wins; otherwise the most specific shared token set, marked as a family match —
-`Nemotron Super 3.5` is the family, `nemotron-3.5-super-vl-120b-a12b` is the variant.
+Neither is a superset, which is why both exist. They are *not* comparable: 24.1 on a 0–100 agentic
+index and 1431 Elo are different measurements, so nothing here adds, averages or ranks one against the
+other. The star's rule is index first, LMArena only when the index is silent — a second opinion, never
+a blended one.
 
-Failures are not fatal: no cache and no network means no score, and every view says "0 of N published"
-rather than inventing one. A fetch that returns fewer rows than the cache keeps the cache.
+Why `/search` and not pagination: the dataset has 1.2M rows and its `/filter` endpoint 500s at almost
+every offset past zero (offset 100 with length 50 answered, offset 150 did not). Asking for the eleven
+model names we actually score is both robust and cheap, and it cannot half-download a table.
+
+What remains non-mechanical is the id -> leaderboard-name match, and it is labelled on screen: exact
+normalised match wins, otherwise the most specific shared token set, marked `inherited` — `Nemotron
+Super 3.5` is the family, `nemotron-3.5-super-vl-120b-a12b` the variant. The token comparison exists
+because the two names order their words differently.
+
+Failures are not fatal: no cache and no network means no score, and every view says "N of M published"
+rather than inventing one. A fetch that comes back shrunken keeps the previous rows.
 """
 
 from __future__ import annotations
@@ -26,6 +36,8 @@ import html as html_module
 import json
 import logging
 import re
+import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,22 +46,44 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 CACHE_NAME = "scores.json"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 
 INDEX_URL = "https://portal.nousresearch.com/bench"
+INDEX_SOURCE = "hermes"
+INDEX_GLYPH = "🧠"
+
+ARENA_SOURCE = "lmarena"
+ARENA_GLYPH = "🏛"
+ARENA_SEARCH = ("https://datasets-server.huggingface.co/search"
+                "?dataset=lmarena-ai%2Fleaderboard-dataset&config=text&split=latest")
+
+# The glyph an id carries on screen. One per scale, so a reader never has to guess which number it is.
+GLYPHS = {INDEX_SOURCE: INDEX_GLYPH, ARENA_SOURCE: ARENA_GLYPH}
+
+# Backwards-compatible aliases: earlier code and the benchmarks shim spoke of one "SOURCE".
 SOURCE = INDEX_URL
-GLYPH = "🧠"
+GLYPH = INDEX_GLYPH
 
 
 @dataclass(frozen=True)
 class Score:
-    value: float
+    value: float          # in its own source's units: 0-100 index, or Elo
     rank: int
-    name: str        # the leaderboard's own name for the model, so a match can be judged
+    name: str             # the leaderboard's own name for the model, so a match can be judged
     org: str
     published: str
-    inherited: bool  # True when this is a family match, not an exact one
+    inherited: bool       # True when this is a family match, not an exact one
     cost: float | None = None
+    source: str = INDEX_SOURCE
+
+    @property
+    def glyph(self) -> str:
+        return GLYPHS.get(self.source, "")
+
+    @property
+    def label(self) -> str:
+        """One number, in its own units and with its own glyph."""
+        return f"{self.glyph}{self.value:.1f}" if self.source == INDEX_SOURCE else f"{self.glyph}{self.value:.0f}"
 
 
 def _now() -> str:
@@ -61,12 +95,7 @@ def _norm(text: object) -> str:
 
 
 def _tokens(text: object) -> set[str]:
-    """Words of a model name, punctuation dropped: `Nemotron Super 3.5` -> {nemotron, super, 3, 5}.
-
-    A prefix matcher was fine until the leaderboard called it `Nemotron Super 3.5` while the NIM id is
-    `nemotron-3.5-super-vl-120b-a12b` — same words, different order. Comparing token sets handles the
-    order without loosening the rule into substring soup.
-    """
+    """Words of a model name, punctuation dropped: `Nemotron Super 3.5` -> {nemotron, super, 3, 5}."""
     return {token for token in re.split(r"[^a-z0-9]+", str(text or "").lower()) if token}
 
 
@@ -94,7 +123,7 @@ def reset() -> None:
     _MEMO.clear()
 
 
-# --------------------------------------------------------------------------- fetch
+# --------------------------------------------------------------------------- fetch: Hermes Index
 
 def _get_text(url: str, timeout: float = 30.0) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "hermes-nim"})
@@ -143,6 +172,96 @@ def fetch_rows() -> list[dict]:
     return parse_index_page(_get_text(INDEX_URL))
 
 
+# --------------------------------------------------------------------------- fetch: LMArena
+
+def arena_search(name: str, length: int = 25) -> list[dict]:
+    """Rows for one model name out of the arena dataset.
+
+    `/search` is used instead of `/filter`+offset because the latter 500s at most offsets past zero on
+    this 1.2M-row dataset. Retries twice: the datasets-server is flaky in a way that is not our bug.
+    """
+    query = " ".join(str(name).split("/")[-1].replace("-", " ").replace("_", " ").split())
+    if not query:
+        return []
+    url = f"{ARENA_SEARCH}&query={urllib.parse.quote(query)}&offset=0&length={length}"
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            payload = json.loads(_get_text(url, timeout=45.0))
+            rows = [row.get("row") or {} for row in (payload.get("rows") or [])]
+            return [row for row in rows if str(row.get("category") or "overall") == "overall"]
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            time.sleep(1.0 + attempt)
+    logger.warning("hermes-nim: arena search for %r failed: %s", name, last)
+    return []
+
+
+def _contains_either_way(candidate: set[str], tokens: set[str]) -> bool:
+    """Is one name's word set inside the other's?
+
+    One direction was not enough: the board lists `NVIDIA-Nemotron-3-Ultra-550B-A55B (NVFP4)` — more
+    words than our id — and a subset test that only allowed shorter board names silently dropped the
+    model that matters most here. Both directions, and the intersection size decides between candidates.
+    """
+    return len(candidate) >= 2 and (candidate <= tokens or tokens <= candidate)
+
+
+def _arena_entry(rows: list[dict], bare: str) -> dict | None:
+    """Best row for this id: exact normalised name first, then the closest word-set match."""
+    tokens = _tokens(bare)
+    name = _norm(bare)
+    best: tuple[int, dict] | None = None
+    for row in rows:
+        key = _norm(row.get("model_name"))
+        if not key:
+            continue
+        if key == name:
+            return {"value": float(row.get("rating") or 0.0), "rank": int(row.get("rank") or 0),
+                    "name": str(row.get("model_name") or ""),
+                    "org": str(row.get("organization") or ""), "inherited": False}
+        candidate = _tokens(row.get("model_name"))
+        if not _contains_either_way(candidate, tokens):
+            continue
+        if best is None or len(candidate & tokens) > best[0]:
+            best = (len(candidate & tokens), {"value": float(row.get("rating") or 0.0),
+                                     "rank": int(row.get("rank") or 0),
+                                     "name": str(row.get("model_name") or ""),
+                                     "org": str(row.get("organization") or ""),
+                                     "inherited": True})
+    return best[1] if best else None
+
+
+def refresh_arena(names: list[str], *, max_lookups: int = 24, gap: float = 0.4) -> dict | None:
+    """Look up *names* on LMArena and fold the hits into the cache. Never raises.
+
+    Only called from a survey: a render must never touch the network, and asking about models nobody
+    displays would spend quota on curiosity.
+    """
+    cache = load() or {}
+    arena = dict(cache.get("arena") or {})
+    models: dict[str, dict] = dict(arena.get("models") or {})
+    looked = 0
+    for model in names:
+        bare = str(model).split("/", 1)[-1]
+        if not bare or _norm(bare) in models:
+            continue
+        if looked >= max_lookups:
+            break
+        looked += 1
+        entry = _arena_entry(arena_search(bare), bare)
+        if entry is not None:
+            models[_norm(bare)] = entry
+        if gap:
+            time.sleep(gap)
+    if looked:
+        arena = {"models": models, "fetched_at": _now(), "published": _now()[:10],
+                 "count": len(models)}
+        cache = {**cache, "arena": arena}
+        _write(cache)
+    return cache or None
+
+
 # --------------------------------------------------------------------------- cache
 
 def build_cache(rows: list[dict]) -> dict:
@@ -161,12 +280,22 @@ def build_cache(rows: list[dict]) -> dict:
         }
         if key not in models or entry["value"] > models[key]["value"]:
             models[key] = entry
-    return {"version": CACHE_VERSION, "fetched_at": _now(), "source": SOURCE,
+    return {"version": CACHE_VERSION, "fetched_at": _now(), "source": INDEX_URL,
             "published": _now()[:10], "count": len(models), "models": models}
 
 
+def _write(cache: dict) -> None:
+    try:
+        path = cache_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(cache, indent=1, sort_keys=True))
+        _MEMO.clear()          # a fresh write must not be served the pre-write copy
+    except OSError as exc:  # noqa: BLE001
+        logger.warning("hermes-nim: could not cache scores: %s", exc)
+
+
 def refresh(force: bool = False) -> dict | None:
-    """Fetch and cache the leaderboard. A failed or shrunken fetch leaves the cache alone."""
+    """Fetch and cache the Hermes Index. A failed or shrunken fetch leaves the cache alone."""
     cached = load()
     if cached and not force and age_hours(cached) < 0:
         return cached
@@ -184,13 +313,9 @@ def refresh(force: bool = False) -> dict | None:
         logger.warning("hermes-nim: index returned %s rows, keeping the cached %s",
                        cache["count"], previous)
         return cached
-    try:
-        path = cache_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(cache, indent=1, sort_keys=True))
-    except OSError as exc:  # noqa: BLE001
-        logger.warning("hermes-nim: could not cache scores: %s", exc)
-    return cache
+    merged = {**cache, "arena": (cached or {}).get("arena") or {}}   # keep the other source
+    _write(merged)
+    return merged
 
 
 def load() -> dict | None:
@@ -206,7 +331,7 @@ def load() -> dict | None:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
         return None
-    if not data.get("models"):
+    if not data.get("models") and not (data.get("arena") or {}).get("models"):
         return None
     _MEMO["key"], _MEMO["data"] = key, data
     return data
@@ -230,25 +355,45 @@ def maybe_refresh(max_age_hours: float = 24.0) -> dict | None:
     return refresh(force=True) or cached
 
 
+def sources_meta(cache: dict | None = None) -> list[dict]:
+    """What `/nim scores` prints as provenance: one line per source, with its own date and count."""
+    cache = cache or load() or {}
+    arena = cache.get("arena") or {}
+    return [
+        {"key": INDEX_SOURCE, "source": "Hermes Index", "glyph": INDEX_GLYPH,
+         "scale": "0-100 agentic index",
+         "published": str(cache.get("published") or ""), "count": int(cache.get("count") or 0),
+         "url": INDEX_URL},
+        {"key": ARENA_SOURCE, "source": "LMArena", "glyph": ARENA_GLYPH,
+         "scale": "Elo, public leaderboard",
+         "published": str(arena.get("published") or ""), "count": int(arena.get("count") or 0),
+         "url": "https://lmarena.ai/leaderboard"},
+    ]
+
+
 # --------------------------------------------------------------------------- match
 
 def _match(models: dict[str, dict], name: str, tokens: set[str]) -> tuple[dict, bool] | None:
-    """Exact normalised name, then the most specific token-subset match."""
+    """Exact normalised name, then the closest word-set match (either direction)."""
     found = models.get(name)
     if found:
-        return found, False
+        return found, bool(found.get("inherited"))
     best: tuple[int, dict] | None = None
     for key, entry in models.items():
         candidate = _tokens(entry.get("name") or key)
-        if len(candidate) < 2 or not candidate <= tokens:
+        if not _contains_either_way(candidate, tokens):
             continue
-        if best is None or len(candidate) > best[0]:
-            best = (len(candidate), entry)
+        if best is None or len(candidate & tokens) > best[0]:
+            best = (len(candidate & tokens), entry)
     return (best[1], True) if best else None
 
 
-def lookup(model: str, cache: dict | None = None) -> Score | None:
-    """The published score for *model*, or None when the leaderboard does not cover it."""
+def lookup(model: str, cache: dict | None = None, *, source: str | None = None) -> Score | None:
+    """The published score for *model*.
+
+    Index first, LMArena only when the index is silent — unless `source` names one explicitly, which
+    is what `/nim scores` does when it lists each source separately.
+    """
     cache = cache if cache is not None else load()
     if not cache or not model:
         return None
@@ -256,20 +401,35 @@ def lookup(model: str, cache: dict | None = None) -> Score | None:
     name = _norm(bare)
     if not name:
         return None
-    matched = _match(cache.get("models") or {}, name, _tokens(bare))
-    if matched is None:
-        return None
-    found, inherited = matched
-    return Score(found["value"], found["rank"], found["name"], found["org"],
-                 str(cache.get("published") or ""), inherited, found.get("cost"))
+    tokens = _tokens(bare)
+    order = [source] if source else [INDEX_SOURCE, ARENA_SOURCE]
+    for candidate in order:
+        if candidate == INDEX_SOURCE:
+            table, published = cache.get("models") or {}, str(cache.get("published") or "")
+            cost_of = lambda e: e.get("cost")  # noqa: E731
+        elif candidate == ARENA_SOURCE:
+            arena = cache.get("arena") or {}
+            table, published = arena.get("models") or {}, str(arena.get("published") or "")
+            cost_of = lambda e: None  # noqa: E731
+        else:
+            continue
+        matched = _match(table, name, tokens)
+        if matched is None:
+            continue
+        found, inherited = matched
+        return Score(found["value"], found["rank"], found["name"], found["org"], published,
+                     inherited, cost_of(found), candidate)
+    return None
 
 
 def coverage(models: list[str], cache: dict | None = None) -> tuple[int, int]:
+    """(how many of *models* carry any published score, how many were asked about)."""
     cache = cache if cache is not None else load()
     scored = sum(1 for model in models if lookup(model, cache) is not None)
     return scored, len(models)
 
 
-__all__ = ["Score", "SOURCE", "GLYPH", "CACHE_NAME", "parse_index_page", "fetch_rows", "build_cache",
-           "refresh", "load", "age_hours", "maybe_refresh", "lookup", "coverage", "cache_path",
-           "reset"]
+__all__ = ["Score", "SOURCE", "GLYPH", "GLYPHS", "INDEX_SOURCE", "INDEX_GLYPH", "ARENA_SOURCE",
+           "ARENA_GLYPH", "CACHE_NAME", "parse_index_page", "fetch_rows", "arena_search",
+           "refresh_arena", "build_cache", "refresh", "load", "age_hours", "maybe_refresh",
+           "sources_meta", "lookup", "coverage", "cache_path", "reset"]

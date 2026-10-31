@@ -188,8 +188,12 @@ def _grouped(report: dict) -> tuple[list[dict], list[dict], list[dict]]:
 
 
 def _format_score(published) -> str:
-    """The Hermes Index, one decimal: 24.1 is a measured difference, 24 is a rounding."""
-    return f"{QUALITY_MARK}{published.index:.1f}"
+    """One number in its own units with its own glyph — never two scales in one column.
+
+    `🧠24.1` is the Hermes Index (0-100 agentic) and `🏛1431` is LMArena Elo. They are different
+    measurements; the glyph is there so the reader knows which one they are looking at.
+    """
+    return f"{published.glyph}{published.scaled}"
 
 
 def _quality_tag(result: dict) -> str:
@@ -416,6 +420,31 @@ def render_cached(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _order_key(model: str, verdict: dict) -> tuple:
+    """Chat list order, by one source at a time.
+
+    `order_by: arena` sorts by LMArena Elo because it rates the widest set (MiniMax, Mistral, Muse and
+    the Nemotrons); `index` by the Hermes Index; `speed` by measured writing speed. Models the chosen
+    source does not rate always sort *below* the ones it does — the alternative, interleaving a 0-100
+    index with an Elo, is the arithmetic this plugin refuses to do. Within the unrated tail, the usual
+    rank_key applies so the best of the rest still leads.
+    """
+    from . import scores as _scores
+    from .settings import settings as _settings
+
+    choice = str(getattr(_settings(), "order_by", "arena") or "arena").strip().lower()
+    if choice == "speed":
+        tps = verdict.get("tps")
+        if isinstance(tps, (int, float)):
+            return (0, -tps, engine.rank_key(verdict))
+        return (1, 0.0, engine.rank_key(verdict))
+    found = _scores.lookup(model, source=engine.primary_source())
+    if found is not None:
+        # rank first: an Elo rank and an index rank are both "position in a published table"
+        return (0, found.rank or 10_000, engine.rank_key(verdict))
+    return (1, 0, engine.rank_key(verdict))
+
+
 def render_board(report: dict, limit: int = 14) -> str:
     """The whole answer to "what can I use?": every listed id, measured, sorted into chat / utility /
     offline. This is `/nim` itself — a survey, not a peek at the models already in config."""
@@ -433,7 +462,7 @@ def render_board(report: dict, limit: int = 14) -> str:
     alive = {model: verdict for model, verdict in rows.items()
              if verdict.get("status") == "ok"}
     chat = sorted((model for model in alive if engine.capability(model) == "chat"),
-                  key=lambda model: engine.rank_key(alive[model]))
+                  key=lambda model: _order_key(model, alive[model]))
     utility = sorted((model for model in alive if engine.capability(model) == "utility"),
                      key=lambda model: engine.rank_key(alive[model]))
     offline = [(model, verdict) for model, verdict in rows.items()
@@ -464,8 +493,16 @@ def render_board(report: dict, limit: int = 14) -> str:
     if chat:
         # "why is 🧠 missing on most rows?" answered where the question is asked: the index is an
         # external publication, not something the API exposes, so coverage is a fact worth stating.
-        scored = sum(1 for model in chat if benchmarks.lookup(model) is not None)
-        lines.append(t("board.section_chat", scored=scored, total=len(chat)))
+        from . import scores as _scores
+
+        index_n = sum(1 for model in chat
+                      if _scores.lookup(model, source=_scores.INDEX_SOURCE) is not None)
+        arena_n = sum(1 for model in chat
+                      if _scores.lookup(model, source=_scores.ARENA_SOURCE) is not None)
+        from .settings import settings as _settings
+
+        lines.append(t("board.section_chat", index=index_n, arena=arena_n, total=len(chat),
+                       by=str(_settings().order_by or "arena")))
         for model in chat[:limit]:
             verdict = alive[model]
             bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]
@@ -543,10 +580,14 @@ def render_scores(report: dict) -> str:
     chat = [model for model in catalog
             if (models.get(model) or {}).get("status") == "ok"
             and engine.capability(model) == "chat"]
-    lines = [t("scores.title"),
-             t("scores.meta", published=cache.get("published") or "?",
-               age=f"{scores.age_hours(cache):.0f}", count=cache.get("count") or 0),
-             ""]
+    lines = [t("scores.title")]
+    for meta in scores.sources_meta(cache):
+        shown = sum(1 for model in chat
+                    if scores.lookup(model, cache, source=meta["key"]) is not None)
+        lines.append(t("scores.meta", glyph=meta["glyph"], name=meta["source"],
+                       published=meta["published"] or "?", count=meta["count"],
+                       age=f"{scores.age_hours(cache):.0f}", shown=shown, total=len(chat)))
+    lines.append("")
     scored = 0
     for model in sorted(chat, key=lambda m: (engine.rank_key(models[m]))):
         found = scores.lookup(model, cache)
@@ -556,7 +597,7 @@ def render_scores(report: dict) -> str:
         scored += 1
         mark = t("scores.family") if found.inherited else t("scores.exact")
         costs = f" · ${found.cost:g}/task" if isinstance(found.cost, (int, float)) else ""
-        lines.append(f"{scores.GLYPH} {short_model(model)} — {found.value:.1f} {mark} "
+        lines.append(f"{found.glyph} {short_model(model)} — {found.label[1:]} {mark} "
                     f"({found.name}){costs}")
     lines += ["", t("scores.coverage", scored=scored, total=len(chat)),
               t("scores.source")]

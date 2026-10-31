@@ -35,7 +35,12 @@ class Benchmark:
 
     @property
     def glyph(self) -> str:
-        return GLYPH
+        return scores.GLYPHS.get(self.source, GLYPH)
+
+    @property
+    def scaled(self) -> str:
+        """The number in its own units: one decimal for the 0-100 index, integer for Elo."""
+        return f"{self.index:.1f}" if self.source == scores.INDEX_SOURCE else f"{self.index:.0f}"
 
 
 def as_of() -> str:
@@ -44,12 +49,12 @@ def as_of() -> str:
     return str(cache.get("published") or "")
 
 
-def lookup(model: str) -> Benchmark | None:
-    """The published score for *model*, or None when the leaderboard does not cover it."""
-    found = scores.lookup(model)
+def lookup(model: str, source: str | None = None) -> Benchmark | None:
+    """The published score for *model* — index first, LMArena when the index is silent."""
+    found = scores.lookup(model, source=source)
     if found is None:
         return None
-    return Benchmark(index=found.value, label=found.name, context=None, source=SOURCE,
+    return Benchmark(index=found.value, label=found.name, context=None, source=found.source,
                      published=found.published, inherited=found.inherited, cost=found.cost)
 
 
@@ -64,7 +69,7 @@ def describe(model: str) -> str:
     found = lookup(model)
     if found is None:
         return ""
-    return f"{GLYPH}{found.index:.1f}{' family' if found.inherited else ''}"
+    return f"{found.glyph}{found.scaled}{' family' if found.inherited else ''}"
 
 
 def known_models() -> list[str]:

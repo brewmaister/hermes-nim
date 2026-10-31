@@ -532,38 +532,66 @@ def recommend_min_tps() -> float:
     return value if value > 0 else RECOMMEND_MIN_TPS
 
 
-def chat_rank(result: dict, min_tps: float | None = None) -> tuple:
+def primary_source() -> str:
+    """Which table decides first, from `order_by`.
+
+    The list order and the star must come from the same source — otherwise the board shows LMArena
+    first and hands the star to a model LMArena ranks fifth, and the reader has to work out which rule
+    won. `speed` means "no table first", so the index leads and the arena is the second opinion.
+    """
+    from . import scores as _scores
+    from .settings import settings as _settings
+
+    try:
+        choice = str(_settings().order_by or "arena").strip().lower()
+    except Exception:  # noqa: BLE001
+        choice = "arena"
+    return _scores.INDEX_SOURCE if choice == "index" else _scores.ARENA_SOURCE
+
+
+def chat_rank(result: dict, min_tps: float | None = None,
+              leading_source: str | None = None) -> tuple:
     """How good this model would be to actually chat with, best first.
 
     Rank order and *recommendation* order are different questions. `rank_key` answers "which model has
     the strongest evidence of quality"; a star answers "which one should you point Hermes at right now",
     and that model must also be pleasant to talk to.
 
-    Tiers, in order:
-      1. A published score and a decent writing speed — quality, confirmed usable.
-      2. A published score that writes slowly — still the smartest thing available, just leaden.
+    Tiers, in order (the leading table is `order_by`: arena by default, index as the alternative):
+      1. Rated by the leading table — its rank decides, and rank is comparable across tables even
+         where the numbers are not. A decent writing speed breaks ties.
+      2. Rated only by the other table — a real score, never able to beat the leading one.
       3. No score, but a measured writing speed — fastest evidence we have.
       4. No score and no speed — first byte only.
     Parameter count is deliberately absent: "550B in the id" is a guess about quality, and it made the
     star land on the biggest unscored model rather than the one that was demonstrably pleasant.
     """
-    from . import benchmarks
+    from . import scores as _scores
 
     model = str(result.get("model") or "")
-    score = benchmarks.quality(model)
+    leading = leading_source or primary_source()
+    # A source that rates the model decides; otherwise the other table fills in, so an arena-only
+    # model still outranks a model with no evidence at all.
+    found = _scores.lookup(model, source=leading) or _scores.lookup(model)
     tps = result.get("tps")
     speed = tps if isinstance(tps, (int, float)) else None
     latency = result.get("ttft_s")
     latency = latency if isinstance(latency, (int, float)) else 9e9
     if min_tps is None:      # resolved by the caller when ranking a list: settings() is not cheap
         min_tps = recommend_min_tps()
-    if score is not None and (speed is None or speed >= min_tps):
-        return (0, -score, -(speed or 0.0), latency)
-    if score is not None:
-        return (1, -score, -(speed or 0.0), latency)
+    # Tiers are per source, never across them: an agentic index and an Elo cannot be compared, so a
+    # model rated by the index outranks one rated only by the arena, and both outrank a speed guess.
+    if found is not None:
+        # Rated by the leading source: its rank decides, because rank is comparable across tables even
+        # when the numbers are not. A secondary-source score still outranks a speed guess, but never
+        # wins over the leading table.
+        preferred = found.source == leading
+        source_tier = 0 if preferred else 1
+        slow_writer = 0 if (speed is None or speed >= min_tps) else 1
+        return (source_tier, slow_writer, found.rank or 10_000, -(speed or 0.0), latency)
     if speed is not None:
-        return (2, -speed, -reliability(result), latency)
-    return (3, 0.0, -reliability(result), latency)
+        return (2, 0, -speed, -reliability(result), latency)
+    return (3, 0, 0.0, -reliability(result), latency)
 
 
 def recommended(report: dict) -> dict | None:
@@ -586,8 +614,10 @@ def recommended(report: dict) -> dict | None:
         eligible.append(result)
     if not eligible:
         return None
-    min_tps = recommend_min_tps()      # one settings read per recommendation, not one per comparison
-    return min(eligible, key=lambda result: chat_rank(result, min_tps))
+    # One settings read per recommendation, not one per comparison: settings() parses config.yaml.
+    min_tps = recommend_min_tps()
+    leading = primary_source()
+    return min(eligible, key=lambda result: chat_rank(result, min_tps, leading))
 
 
 # --------------------------------------------------------------------------- verdicts
@@ -771,6 +801,13 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
             current = _settings()
             if current.scores_refresh:
                 scores.maybe_refresh(max_age_hours=current.scores_max_age_hours)
+                if current.arena_scores:
+                    # Only the models this board can star or score: a search per catalog id would be
+                    # 85 requests to learn that NVIDIA's nemotrons are not on LMArena (they are not).
+                    names = sorted(set(previous.get("configured_in") or {})
+                                   | {model for model, verdict in (previous.get("models") or {}).items()
+                                      if verdict.get("status") == "ok"})
+                    scores.refresh_arena(names)
         except Exception:  # noqa: BLE001 - a stale prior must not fail a scan
             pass
 

@@ -139,7 +139,7 @@ usage:
   cfg: "/nim cfg — which NIM models config.yaml references, no network"
   json: "/nim json — the last scan as JSON"
   tail: "/nim version · /nim help"
-  legend: "glyphs — 🧠 Hermes Index · ⚡ first byte · ✍️ tok/s · 🆕 new · ⭐️ pick · ⚠️ degraded · 🔴 dead"
+  legend: "glyphs — 🧠 Hermes Index · 🏛 LMArena Elo (other scale, never mixed) · ⚡ first byte · ✍️ tok/s · 🆕 new · ⭐️ pick · ⚠️ degraded · 🔴 dead"
 
 util:
   guard: "safety classifier"
@@ -163,12 +163,12 @@ util:
 
 scores:
   title: "NVIDIA NIM · quality prior"
-  meta: "Hermes Index, read {published} · fetched {age}h ago · {count} ranked models"
+  meta: "{glyph} {name} — {shown}/{total} of your chat models · {count} ranked · published {published} · fetched {age}h ago"
   exact: "exact"
   family: "family match"
   absent: "no published score"
   coverage: "🧠 {scored} of {total} online chat models have a published score"
-  source: "source: 🧠 portal.nousresearch.com/bench (Hermes Index) — refetched by /nim survey"
+  source: "sources: 🧠 portal.nousresearch.com/bench (agentic index, 0-100) · 🏛 lmarena.ai (Elo) — re-read by /nim survey. Two scales, never averaged: the index wins when it has a row, the arena fills in when it does not."
   none: "NVIDIA NIM · quality prior — nothing cached yet; /nim survey reads the Hermes Index"
 
 vendor:
@@ -180,7 +180,7 @@ vendor:
 board:
   title: "NVIDIA NIM"
   stats: "⌛️{age} · 🗒{listed} listed · 🟢 {chat} chat · 🛠 {utility} · 🔴 {offline} offline"
-  section_chat: "💬 chat models · 🧠 {scored}/{total} published"
+  section_chat: "💬 chat models · 🧠 {index}/{total} index · 🏛 {arena}/{total} arena · sorted by {by}"
   section_utility: "🛠 utility models"
   pick_unconfigured: "not in config — add it to use it"
   offline_header: "🔴 {count} offline"
@@ -211,5 +211,6 @@ settings:
   live_attempts: "· live_attempts: {value} (interactive /nim; /nim probe uses {attempts})"
   survey: "· survey_catalog: {value} (every /nim measures all listed models; {workers} workers, {cap}s cap)"
   recommend: "· recommend_max_ttft_s: {value}s · recommend_min_tps: {tps} (the ⭐️ gate: a model must answer this fast, and a scored one must write this quickly to keep the top tier)"
-  scores: "· scores_refresh: {value} (a survey refetches the LMArena leaderboard when the cache is older than {hours}h)"
+  scores: "· scores_refresh: {value} · arena_scores: {arena} (a survey re-reads the Hermes Index when older than {hours}h, and fills gaps from LMArena)"
+  order: "· order_by: {value} (chat list order: arena = 🏛 Elo, index = 🧠 agentic, speed = ✍️ measured; unrated models sort last)"
   language: "· language: {value} (auto follows display.language; en/es shipped)"

@@ -194,7 +194,7 @@ def _quality_tag(result: dict) -> str:
         return ""
     # "family" is a claim about the number: it is the parent model's score, not this variant's.
     family = f" {t('quality.family')}" if published.inherited else ""
-    return f"{QUALITY_MARK}{published.index:g}{family}"
+    return f"{QUALITY_MARK}{published.index:.0f}{family}"
 
 
 def _write_tag(result: dict) -> str:
@@ -269,7 +269,7 @@ def best_line(report: dict) -> str:
     published = benchmarks.lookup(model)
     why: list[str] = []
     if published is not None:
-        why.append(f"{QUALITY_MARK}{published.index:g}")
+        why.append(f"{QUALITY_MARK}{published.index:.0f}")
         if published.context:
             why.append(t("rec.ctx", ctx=human_ctx(published.context)))
     else:
@@ -467,7 +467,7 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.insert(0, NEW_MARK)
             published = benchmarks.lookup(model)
             if published is not None:
-                bits.insert(0, f"{QUALITY_MARK}{published.index:g}"
+                bits.insert(0, f"{QUALITY_MARK}{published.index:.0f}"
                                + (f" {t('quality.family')}" if published.inherited else ""))
 
             if model in routed:

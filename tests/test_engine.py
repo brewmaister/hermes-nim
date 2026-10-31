@@ -679,6 +679,24 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn("🔴 2 offline", text)
         self.assertIn("2 not provisioned", text)
 
+    def test_every_utility_marker_has_a_label_in_every_language(self):
+        """A missing label would print `(util.parse)` at the reader — worse than no label."""
+        from nim import i18n
+
+        for marker in engine.UTILITY_MARKERS:
+            for lang in ("en", "es"):
+                label = i18n.t(f"util.{marker}", lang=lang)
+                self.assertNotEqual(label, f"util.{marker}", f"{marker} missing in {lang}")
+
+    def test_utility_rows_say_what_the_model_is(self):
+        survey = {"at": engine._now_iso(), "listed": 3, "measured": 3, "online": 3}
+        ids = ("meta/llama-guard-4-12b", "nvidia/nemotron-parse-2.0", "openai/gpt-oss-20b")
+        report = _fake_report({model: "ok" for model in ids}, catalog=ids, survey=survey)
+        text = render.render_board(report)
+        self.assertIn("· llama-guard-4-12b (safety classifier)", text)
+        self.assertIn("· nemotron-parse-2.0 (document parsing)", text)
+        self.assertNotIn("gpt-oss-20b (", text)      # a chat model carries no utility label
+
     def test_the_board_survives_a_report_with_no_survey(self):
         report = _fake_report({"a/one": "ok"}, catalog=("a/one",))
         self.assertIn("never surveyed", render.render_board(report))

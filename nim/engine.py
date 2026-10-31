@@ -341,10 +341,22 @@ UTILITY_MARKERS = (
 )
 
 
+def utility_marker(model: str) -> str | None:
+    """Which marker made this a utility model — so the board can say what it is, not just that it is.
+
+    A bucket with no reason is a label the reader has to take on faith: "llama-guard-4-12b" under
+    `utility` says nothing until it says `(safety classifier)`.
+    """
+    name = str(model or "").split("/", 1)[-1].lower()
+    for marker in UTILITY_MARKERS:
+        if marker in name:
+            return marker
+    return None
+
+
 def capability(model: str) -> str:
     """``chat`` or ``utility`` — from the id, since NVIDIA ships no capability field."""
-    name = str(model or "").split("/", 1)[-1].lower()
-    return "utility" if any(marker in name for marker in UTILITY_MARKERS) else "chat"
+    return "utility" if utility_marker(model) else "chat"
 
 
 def params_from_id(model: str) -> float | None:

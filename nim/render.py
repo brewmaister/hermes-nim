@@ -455,7 +455,10 @@ def render_board(report: dict, limit: int = 14) -> str:
     if utility:
         # one per line: a comma-separated run of ids is a paragraph you have to decode, not a list
         lines += ["", t("board.section_utility")]
-        lines += [f"· {short_model(model)}" for model in utility[:limit]]
+        for model in utility[:limit]:
+            marker = engine.utility_marker(model)
+            why = t(f"util.{marker}") if marker else ""
+            lines.append(f"· {short_model(model)}" + (f" ({why})" if why else ""))
         if len(utility) > limit:
             lines.append(t("foot.more", hidden=len(utility) - limit))
 

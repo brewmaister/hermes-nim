@@ -136,6 +136,26 @@ usage:
   json: "/nim json — the last scan as JSON"
   tail: "/nim version · /nim help"
 
+util:
+  guard: "safety classifier"
+  safety: "safety classifier"
+  parse: "document parsing"
+  calibrat: "calibration"
+  detector: "detector"
+  vision: "vision"
+  embed: "embeddings"
+  rerank: "reranking"
+  retriev: "retrieval"
+  asr: "speech to text"
+  tts: "text to speech"
+  speech: "speech"
+  voice: "voice"
+  ocr: "OCR"
+  reward: "reward model"
+  moderation: "moderation"
+  classif: "classifier"
+  translat: "translation"
+
 board:
   header: "NVIDIA NIM · surveyed {age} · {listed} listed"
   counts: "🟢 {chat} chat · 🛠 {utility} · 🔴 {offline} offline"

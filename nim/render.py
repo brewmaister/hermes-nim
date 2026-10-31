@@ -312,7 +312,8 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     # then attempts-answered, then measured latency. Exactly one model carries the star — and it is
     # not always the top of the list, because a 40 s first byte is not a recommendation.
     new = new_models(report)
-    ordered = sorted(alive, key=engine.rank_key)
+    # Same order as the board: one source leads, so cached/probe views cannot disagree with `/nim`.
+    ordered = sorted(alive, key=lambda result: _order_key(str(result.get("model") or ""), result))
     seats = podium([str(result.get("model") or "") for result in ordered])
     for result, (medal, tied) in zip(ordered, seats):
         lines.append(_line(result, used, medal=medal or None, new=new, tied=tied))

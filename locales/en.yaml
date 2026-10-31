@@ -180,7 +180,7 @@ vendor:
 board:
   title: "NVIDIA NIM"
   stats: "⌛️{age} · 🗒{listed} listed · 🟢 {chat} chat · 🛠 {utility} · 🔴 {offline} offline"
-  section_chat: "💬 chat models · 🧠 {index}/{total} index · 🏛 {arena}/{total} arena · sorted by {by}"
+  section_chat: "💬 chat models"
   section_utility: "🛠 utility models"
   pick_unconfigured: "not in config — add it to use it"
   offline_header: "🔴 {count} offline"

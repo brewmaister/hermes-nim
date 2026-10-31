@@ -770,8 +770,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(text.splitlines()[0], "NVIDIA NIM")        # title on its own line
         self.assertNotIn("🏢", text)                                 # vendors live in /nim vendor
         self.assertIn("💬 chat models", text)
-        self.assertIn("🧠 1/1 index", text)       # coverage is stated, not faked per row
-        self.assertIn("🏛 0/1 arena", text)
+        self.assertIn("💬 chat models", text)
         self.assertIn("minimax-m3.1-flash", text)
         self.assertIn("🛠 utility models", text)
         self.assertIn("llama-guard-4-12b", text)
@@ -804,7 +803,7 @@ class CapabilityTests(unittest.TestCase):
         report = _fake_report({model: "ok" for model in ids}, catalog=ids, survey=survey)
         with install_scores():
             text = render.render_board(report)
-        self.assertIn("🧠 1/3 index", text)
+        self.assertIn("💬 chat models", text)
         score = next(line for line in text.splitlines() if "nemotron-3-ultra" in line)
         plain = next(line for line in text.splitlines() if "muse-glimmer" in line)
         self.assertIn("🧠18.4", score)

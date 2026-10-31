@@ -512,18 +512,9 @@ def render_board(report: dict, limit: int = 14) -> str:
     lines = [t("board.title"), stats, ""]
 
     if chat:
-        # "why is 🧠 missing on most rows?" answered where the question is asked: the index is an
-        # external publication, not something the API exposes, so coverage is a fact worth stating.
-        from . import scores as _scores
-
-        index_n = sum(1 for model in chat
-                      if _scores.lookup(model, source=_scores.INDEX_SOURCE) is not None)
-        arena_n = sum(1 for model in chat
-                      if _scores.lookup(model, source=_scores.ARENA_SOURCE) is not None)
-        from .settings import settings as _settings
-
-        lines.append(t("board.section_chat", index=index_n, arena=arena_n, total=len(chat),
-                       by=str(_settings().order_by or "arena")))
+        # No coverage counters and no "sorted by" note: the glyph on each row already says which table
+        # its number came from, and a section header is a label, not a provenance report.
+        lines.append(t("board.section_chat"))
         for model in chat[:limit]:
             verdict = alive[model]
             bits = [f"{SPEED_MARK}{verdict.get('ttft_s')}s"]

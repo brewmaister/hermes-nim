@@ -299,7 +299,7 @@ def _line(result: dict, used: dict[str, list[str]], medal: str | None = None,
     return f"{mark} {short_model(result['model'])} — " + " · ".join(bits)
 
 
-def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
+def model_lines(report: dict, limit: int = MAX_LINES, medals: bool = True) -> list[str]:
     used = report.get("configured_in") or {}
     alive, warn, dead = _grouped(report)
     lines: list[str] = []
@@ -309,7 +309,9 @@ def model_lines(report: dict, limit: int = MAX_LINES) -> list[str]:
     new = new_models(report)
     # Same order as the board: one source leads, so cached/probe views cannot disagree with `/nim`.
     ordered = sorted(alive, key=lambda result: _order_key(str(result.get("model") or ""), result))
-    seats = podium([str(result.get("model") or "") for result in ordered])
+    # A targeted probe (`/nim probe minimax`) is a readout, not a competition: no podium, or the one
+    # model you asked about comes back wearing 🥇 beside models you never measured.
+    seats = podium([str(result.get("model") or "") for result in ordered]) if medals else [("", False)] * len(ordered)
     for result, (medal, tied) in zip(ordered, seats):
         lines.append(_line(result, used, medal=medal or None, new=new, tied=tied))
     for group in (warn, dead):
@@ -424,12 +426,18 @@ def render_probe(report: dict) -> str:
     models = report.get("models") or {}
     # `models` is the whole board (a scan keeps verdicts it did not re-measure); the header must count
     # what this run actually probed, or `/nim probe minimax` claims to have measured 86 models.
-    measured = len(report.get("probed") or models)
-    header = t("header.probe", models=measured, attempts=report.get("attempts"),
-               board=board_badge(report))
+    probed = list(report.get("probed") or [])
+    measured = len(probed) or len(models)
+    header = t("header.probe_one", attempts=report.get("attempts"), board=board_badge(report)) \
+        if measured == 1 else t("header.probe", models=measured, attempts=report.get("attempts"),
+                               board=board_badge(report))
     if measured != len(models):
         header += t("header.probe_subset", total=len(models))
-    lines = [header, ""] + model_lines(report) + changes_block(report)
+    if probed:
+        # Only what this run measured, when it was asked for specific models.
+        report = {**report, "models": {model: verdict for model, verdict in models.items()
+                                       if model in set(probed)}}
+    lines = [header, ""] + model_lines(report, medals=not probed) + changes_block(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
     return "\n".join(lines)
 

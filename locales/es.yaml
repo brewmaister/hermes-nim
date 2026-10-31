@@ -11,6 +11,7 @@ header:
   board: " · {online}/{listed} listados responden"
   known: "NVIDIA NIM — {models} modelos conocidos"
   probe: "NVIDIA NIM escaneo · ahora mismo · medidos {models} modelos · {attempts}× cada uno{board}"
+  probe_one: "NVIDIA NIM escaneo · ahora mismo · medido 1 modelo · {attempts}×{board}"
   probe_subset: " · {total} en el tablero"
   aborted: "NVIDIA NIM escaneo — abortado"
   stale_badge: " · ⏳ viejo"

@@ -161,15 +161,15 @@ util:
 board:
   header: "NVIDIA NIM · surveyed {age} · {listed} listed"
   counts: "🟢 {chat} chat · 🛠 {utility} · 🔴 {offline} offline"
-  section_chat: "🟢 chat — usable now"
-  section_utility: "🛠 utility"
+  section_chat: "💬 chat models"
+  section_utility: "🛠 utility models"
   offline_header: "🔴 {count} offline"
   offline_group: "  · {count} {why}"
   yours: "yours"
   watching: "watching"
   vendors: "🏢 {vendors}"
   new_badge: " · 🆕 {count} new in {days} days"
-  hints: "/nim probe (your models only, fast) · /nim catalog (offline detail) · /nim json (all of it)"
+  hints: "💡 /nim help · /nim probe (fast) · /nim json (raw)"
 
 progress:
   surveying: "⏳ NVIDIA NIM — surveying all {listed} listed models (~{seconds}s, one attempt each)…"
@@ -189,4 +189,5 @@ settings:
   live_grace: "· live_grace_seconds: {value} (reuse a scan younger than this)"
   recheck: "· recheck_ttft_seconds: {value} (a model already marked dead is only asked for a byte for this long; 0 = use ttft_seconds)"
   live_attempts: "· live_attempts: {value} (interactive /nim; /nim probe uses {attempts})"
+  survey: "· survey_catalog: {value} (every /nim measures all listed models; {workers} workers, {cap}s cap)"
   language: "· language: {value} (auto follows display.language; en/es shipped)"

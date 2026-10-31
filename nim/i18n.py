@@ -168,6 +168,17 @@ def reset_cache() -> None:
     _resolve.cache_clear()
 
 
+# No markdown in this plugin's output (it reaches the reader as plain text), so "bold" is a Unicode
+# trick: mathematical sans-serif bold renders as heavy text in every client without any formatting.
+BOLD_BRAND = "𝗡𝗜𝗩𝗜𝗗𝗜𝗔 𝗡𝗜𝗠"
+PLAIN_BRAND = "NVIDIA NIM"
+
+
+def _brand(text: str) -> str:
+    """Every string that names the plugin gets the heavy weight, one place, no per-key bookkeeping."""
+    return text.replace(PLAIN_BRAND, BOLD_BRAND)
+
+
 def t(key: str, *, lang: str | None = None, **fields) -> str:
     """Translate ``key`` for the active language, formatting ``{placeholders}`` afterwards.
 
@@ -179,7 +190,7 @@ def t(key: str, *, lang: str | None = None, **fields) -> str:
     overlay = _overlay(resolved).get(key)
     if overlay is not None:
         try:
-            return overlay.format(**fields) if fields else overlay
+            return _brand(overlay.format(**fields) if fields else overlay)
         except (KeyError, IndexError, ValueError):
             logger.warning("hermes-nim overlay %s: %r does not fit %s", resolved, key, fields)
     for candidate in (resolved, FALLBACK_LANGUAGE):
@@ -187,16 +198,16 @@ def t(key: str, *, lang: str | None = None, **fields) -> str:
         if text is None:
             continue
         try:
-            return text.format(**fields) if fields else text
+            return _brand(text.format(**fields) if fields else text)
         except (KeyError, IndexError, ValueError):
             logger.warning("hermes-nim locale %s: %r does not fit %s", candidate, key, fields)
             continue
     if fields:
         try:
-            return _catalog(FALLBACK_LANGUAGE).get(key, key).format(**fields)
+            return _brand(_catalog(FALLBACK_LANGUAGE).get(key, key).format(**fields))
         except Exception:  # noqa: BLE001
             pass
-    return key
+    return _brand(key) if key == PLAIN_BRAND else key
 
 
 def has(key: str, *, lang: str | None = None) -> bool:

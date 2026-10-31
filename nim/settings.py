@@ -204,6 +204,8 @@ def describe() -> str:
         t("settings.live_grace", value=f"{current.live_grace_seconds:g}"),
         t("settings.recheck", value=f"{current.recheck_ttft_seconds:g}"),
         t("settings.live_attempts", value=current.live_attempts, attempts=current.attempts),
+        t("settings.survey", value=current.survey_catalog, workers=current.survey_workers,
+          cap=f"{current.survey_ttft_seconds:g}"),
         t("settings.language", value=current.language),
     ]
     return "\n".join(lines)

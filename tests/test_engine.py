@@ -20,7 +20,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nim import commands, engine, render, watch  # noqa: E402
+from nim import commands, engine, i18n, render, watch  # noqa: E402
 
 
 class FakeResponse(io.BytesIO):
@@ -621,7 +621,7 @@ class EmojiFormatTests(unittest.TestCase):
     def test_the_title_is_plain_text_and_has_no_glyph(self):
         """Plugin output is delivered as plain text: `**bold**` reaches the reader as asterisks."""
         first = render.render_cached(self._report()).splitlines()[0]
-        self.assertTrue(first.startswith("NVIDIA NIM"), first)
+        self.assertTrue(first.startswith(i18n.BOLD_BRAND), first)
         self.assertNotIn("🧠", first)
 
     def test_no_view_emits_markdown(self):
@@ -641,7 +641,7 @@ class EmojiFormatTests(unittest.TestCase):
         text = render.render_cached(self._report())
         flat = render.plain(text)
         self.assertNotIn("**", flat)
-        self.assertIn("NVIDIA NIM · ", flat)
+        self.assertIn(i18n.BOLD_BRAND + " · ", flat)
         # the glyphs survive: they are content, not decoration
         self.assertIn("🧠29", flat)
 
@@ -672,9 +672,9 @@ class CapabilityTests(unittest.TestCase):
                               catalog=ids, survey=survey)
         text = render.render_board(report)
         self.assertIn("🟢 1 chat · 🛠 1 · 🔴 2 offline", text)
-        self.assertIn("chat — usable now", text)
+        self.assertIn("💬 chat models", text)
         self.assertIn("minimax-m3.1-flash", text)
-        self.assertIn("🛠 utility", text)
+        self.assertIn("🛠 utility models", text)
         self.assertIn("llama-guard-4-12b", text)
         self.assertIn("🔴 2 offline", text)
         self.assertIn("2 not provisioned", text)
@@ -876,9 +876,14 @@ class LocalizationTests(unittest.TestCase):
                      render.render_catalog(report), render.render_added(report),
                      render.render_probe(report), render.render_speed(report),
                      commands.usage(), settings.describe()]
+        import re
+
         for text in views:
-            # /v1/models is the API path, not prose — it must survive translation untouched
+            # /v1/models is the API path, not prose — it must survive translation untouched.
+            # Config keys (survey_catalog:, ttft_seconds:) are identifiers you type into config.yaml,
+            # so they are stripped before the prose check rather than translated.
             scan = text.replace("/v1/models", "/v1/MODELS")
+            scan = re.sub(r"\b[a-z][a-z0-9_]*:", "", scan)
             for word in english:
                 self.assertNotIn(word, scan, f"'{word}' is English, in Spanish output:\n{text[:200]}")
 
@@ -931,12 +936,12 @@ class BrandTests(unittest.TestCase):
         }
         for name, text in views.items():
             first = text.splitlines()[0]
-            self.assertIn("NVIDIA NIM", first, f"{name} view lost the brand: {first!r}")
+            self.assertIn(i18n.BOLD_BRAND, first, f"{name} view lost the brand: {first!r}")
 
     def test_empty_state_and_error_paths_keep_it_too(self):
-        self.assertIn("NVIDIA NIM", render.render_cached({}))
-        self.assertIn("NVIDIA NIM", render.render_cached({"error": "no key"}))
-        self.assertIn("NVIDIA NIM", render.render_speed({"error": "no key"}))
+        self.assertIn(i18n.BOLD_BRAND, render.render_cached({}))
+        self.assertIn(i18n.BOLD_BRAND, render.render_cached({"error": "no key"}))
+        self.assertIn(i18n.BOLD_BRAND, render.render_speed({"error": "no key"}))
 
 
 class CatalogTests(unittest.TestCase):

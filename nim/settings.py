@@ -209,6 +209,9 @@ def settings() -> Settings:
     return values.with_env()
 
 
+COLUMN = 27   # where the reason starts; wide enough for the longest key plus a one-word value
+
+
 def describe() -> str:
     """The settings block under /nim help — translated, because half a translated page is a bug."""
     from .i18n import t
@@ -218,35 +221,46 @@ def describe() -> str:
     # Grouped the same way as the verbs: measuring, the live door, the survey, ranking, files. Every
     # setting keeps the reason it holds its value — a knob whose why is missing is a knob you cannot
     # safely change — but the reason is now a short clause, not a sentence with three semicolons.
+    # One column for the key and its value, one for the reason. Padding in code, not with spaces in the
+    # translations: a translator that changes a word must not shift the geometry of the column.
+    def row(key: str, value: object, why: str | None = None, **fmt: object) -> str:
+        head = f"  {key} {value}"
+        if not why:
+            return head
+        reason = t(f"settings.why_{why}", **{name: str(value) for name, value in fmt.items()})
+        if len(head) >= COLUMN:
+            return f"{head}\n{' ' * (COLUMN + 2)}{reason}"
+        return f"{head.ljust(COLUMN)}{reason}"
+
     lines = [
         t("settings.intro"),
         "",
         t("settings.g_measure"),
-        t("settings.ttft", value=f"{current.ttft_seconds:g}"),
-        t("settings.attempts", value=current.attempts),
-        t("settings.recheck", value=f"{current.recheck_ttft_seconds:g}"),
+        row("ttft_seconds", f"{current.ttft_seconds:g}", "ttft"),
+        row("attempts", current.attempts, "attempts"),
+        row("recheck_ttft_seconds", f"{current.recheck_ttft_seconds:g}", "recheck"),
         "",
         t("settings.g_live"),
-        t("settings.live_default", value=current.live_default),
-        t("settings.live_attempts", value=current.live_attempts, attempts=current.attempts),
-        t("settings.live_grace", value=f"{current.live_grace_seconds:g}"),
+        row("live_default", current.live_default, "live_default"),
+        row("live_attempts", current.live_attempts, "live_attempts", attempts=current.attempts),
+        row("live_grace_seconds", f"{current.live_grace_seconds:g}", "live_grace"),
         "",
         t("settings.g_survey"),
-        t("settings.survey", value=current.survey_catalog, workers=current.survey_workers,
-          cap=f"{current.survey_ttft_seconds:g}"),
+        row("survey_catalog", current.survey_catalog, "survey", workers=current.survey_workers,
+            cap=f"{current.survey_ttft_seconds:g}"),
         "",
         t("settings.g_rank"),
-        t("settings.order", value=current.order_by),
-        t("settings.recommend", value=f"{current.recommend_max_ttft_s:g}",
-          tps=f"{current.recommend_min_tps:g}"),
-        t("settings.recommend_why"),
-        t("settings.scores", value=current.scores_refresh, arena=current.arena_scores),
-        t("settings.scores_why", hours=f"{current.scores_max_age_hours:g}"),
+        row("order_by", current.order_by, "order"),
+        row("recommend_max_ttft_s", f"{current.recommend_max_ttft_s:g}", "recommend"),
+        row("recommend_min_tps", f"{current.recommend_min_tps:g}"),
+        row("scores_refresh", current.scores_refresh, "scores",
+            hours=f"{current.scores_max_age_hours:g}"),
+        row("arena_scores", current.arena_scores),
         "",
         t("settings.g_files"),
-        t("settings.state_dir", value=current.state_dir or "~/hermes-outputs/nim-probe"),
-        t("settings.shortlist", value=models),
-        t("settings.language", value=current.language),
+        row("state_dir", current.state_dir or "~/hermes-outputs/nim-probe"),
+        row("shortlist", models),
+        row("language", current.language, "language"),
     ]
     return "\n".join(lines)
 

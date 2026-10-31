@@ -483,7 +483,7 @@ def reliability(result: dict) -> float:
 def rank_key(result: dict) -> tuple:
     """Best-first, on evidence in descending order of trust.
 
-    1. A published benchmark index (`nim.benchmarks`) — external evidence, labelled as such.
+    1. A published score (the Hermes Index, `nim.scores`) — external evidence, labelled as such.
     2. Otherwise the parameter count in the model id — a weak prior, better than nothing.
     3. Then measured behaviour: attempts-answered ratio, then time to first byte.
 
@@ -493,7 +493,7 @@ def rank_key(result: dict) -> tuple:
     from . import benchmarks
 
     model = str(result.get("model") or "")
-    index = benchmarks.quality(model)
+    index = benchmarks.quality(model)      # one source, one scale: the raw Hermes Index
     size = params_from_id(model)
     latency = result.get("ttft_s")
     return (

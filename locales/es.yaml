@@ -138,7 +138,7 @@ usage:
   cfg: "/nim cfg — qué modelos NIM referencia config.yaml, sin red"
   json: "/nim json — el último escaneo en JSON"
   tail: "/nim version · /nim help"
-  legend: "glifos — 🧠 índice AA publicado (solo cuando existe) · ⚡ primer byte · ✍️ tok/s · 🆕 nuevo · ⭐️ elegido · ⚠️ degradado · 🔴 caído"
+  legend: "glifos — 🧠 Hermes Index · ⚡ primer byte · ✍️ tok/s · 🆕 nuevo · ⭐️ elegido · ⚠️ degradado · 🔴 caído"
 
 util:
   guard: "clasificador de seguridad"
@@ -162,13 +162,13 @@ util:
 
 scores:
   title: "NVIDIA NIM · prior de calidad"
-  meta: "tabla publicada el {published} · obtenida hace {age}h · {count} modelos clasificados"
+  meta: "Hermes Index, leído el {published} · obtenido hace {age}h · {count} modelos"
   exact: "exacto"
   family: "coincidencia de familia"
   absent: "sin puntuación publicada"
   coverage: "🧠 {scored} de {total} modelos de chat en línea tienen puntuación publicada"
-  source: "fuente: dataset público del leaderboard de LMArena (datasets-server.huggingface.co), se actualiza en /nim survey"
-  none: "NVIDIA NIM · prior de calidad — nada en caché todavía; /nim survey descarga el leaderboard de LMArena"
+  source: "fuente: 🧠 portal.nousresearch.com/bench (Hermes Index) — se actualiza en /nim survey"
+  none: "NVIDIA NIM · prior de calidad — nada en caché todavía; /nim survey lee el Hermes Index"
 
 vendor:
   title: "NVIDIA NIM · proveedores"

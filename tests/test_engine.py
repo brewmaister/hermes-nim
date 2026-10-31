@@ -260,17 +260,19 @@ class BenchmarkPriorTests(unittest.TestCase):
         from nim import scores
 
         cache = scores.build_cache([
-            {"model_name": "MiniMax M3", "organization": "minimaxai", "rating": 1487.0,
-             "rank": 5, "leaderboard_publish_date": "2026-10-30"},
-            {"model_name": "GPT-OSS 20B", "organization": "openai", "rating": 1310.0,
-             "rank": 40, "leaderboard_publish_date": "2026-10-30"},
+            {"model_name": "Step 5 Preview", "organization": "StepFun", "rating": 32.83,
+             "rank": 15, "cost_per_task": 0.07},
+            {"model_name": "Nemotron Super 3.5", "organization": "NVIDIA", "rating": 24.1,
+             "rank": 17, "cost_per_task": None},
         ])
-        self.assertEqual(cache["published"], "2026-10-30")
         self.assertEqual(cache["count"], 2)
-        exact = scores.lookup("openai/gpt-oss-20b", cache)
-        self.assertEqual(exact.elo, 1310.0)
+        exact = scores.lookup("stepfun-ai/step-5-preview", cache)
+        self.assertEqual(exact.value, 32.83)
         self.assertFalse(exact.inherited)
-        family = scores.lookup("minimaxai/minimax-m3.1-flash", cache)
+        self.assertEqual(exact.cost, 0.07)
+        # same words, different order: the id says 3.5-super, the board says Super 3.5
+        family = scores.lookup("nvidia/nemotron-3.5-super-vl-120b-a12b", cache)
+        self.assertEqual(family.value, 24.1)
         self.assertTrue(family.inherited)          # family rating, and it says so
         self.assertIsNone(scores.lookup("poolside/laguna-xs-2.1", cache))
 
@@ -280,9 +282,9 @@ class BenchmarkPriorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(scores, "cache_path", return_value=Path(tmp) / "scores.json"), \
                 mock.patch.object(scores, "fetch_rows", side_effect=OSError("offline")):
-            Path(tmp, "scores.json").write_text(json.dumps(ARENA_FIXTURE))
+            Path(tmp, "scores.json").write_text(json.dumps(SCORES_FIXTURE))
             refreshed = scores.refresh(force=True)
-        self.assertEqual(refreshed["count"], ARENA_FIXTURE["count"])   # stale beats empty
+        self.assertEqual(refreshed["count"], 3)   # stale beats empty
 
     def test_no_cache_means_no_scores_at_all(self):
         from nim import scores
@@ -615,7 +617,7 @@ class EmojiFormatTests(unittest.TestCase):
     def test_marks_carry_the_meaning(self):
         with install_scores():
             text = render.render_cached(self._report())
-        self.assertIn("🧠1487 family", text)        # published Elo, inherited family score
+        self.assertIn("🧠21.5 family", text)        # Hermes Index, inherited family score
         self.assertIn("⚡0.41s", text)              # measured first byte
         # a model with no published score gets no 🧠 — the glyph is never filled in with a guess
         lightning = next(line for line in text.splitlines() if "lightning" in line)
@@ -693,7 +695,7 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertNotIn("**", flat)
         self.assertIn(i18n.BOLD_BRAND + " · ", flat)
         # the glyphs survive: they are content, not decoration
-        self.assertIn("🧠1487", flat)
+        self.assertIn("🧠21.5", flat)
 
 
 class CapabilityTests(unittest.TestCase):
@@ -762,7 +764,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn("🧠 1/3 published", text)
         score = next(line for line in text.splitlines() if "nemotron-3-ultra" in line)
         plain = next(line for line in text.splitlines() if "muse-glimmer" in line)
-        self.assertIn("🧠1443", score)
+        self.assertIn("🧠18.4", score)
         self.assertNotIn("🧠", plain)             # no score, and no fake one either
         self.assertNotIn("30B ·", plain)          # the id already says 30b; the row does not repeat it
 
@@ -1175,28 +1177,28 @@ moa:
         self.assertEqual(sorted(found), ["nvidia/a"])
 
 
-ARENA_FIXTURE = {
-    "version": 1,
+SCORES_FIXTURE = {
+    "version": 3,
     "fetched_at": "2026-10-30T00:00:00+00:00",
     "source": "test",
     "published": "2026-10-30",
     "count": 3,
     "models": {
-        "minimaxm3": {"elo": 1487.0, "rank": 5, "name": "MiniMax M3", "org": "minimaxai",
-                      "published": "2026-10-30"},
-        "nemotron3ultra550ba55b": {"elo": 1443.0, "rank": 9, "name": "Nemotron 3 Ultra 550B A55B",
-                                   "org": "nvidia", "published": "2026-10-30"},
-        "gptoss20b": {"elo": 1310.0, "rank": 40, "name": "GPT-OSS 20B", "org": "openai",
-                      "published": "2026-10-30"},
+        "minimaxm3": {"value": 21.5, "rank": 11, "name": "MiniMax M3", "org": "MiniMax",
+                      "cost": 0.11},
+        "nemotron3ultra550ba55b": {"value": 18.4, "rank": 15, "name": "Nemotron 3 Ultra",
+                                   "org": "NVIDIA", "cost": None},
+        "nemotronsuper35": {"value": 24.1, "rank": 17, "name": "Nemotron Super 3.5",
+                            "org": "NVIDIA", "cost": 0.42},
     },
 }
 
 
 def install_scores(cache=None):
-    """Point the quality prior at a fixed leaderboard: tests must not depend on a network fetch."""
+    """Point the quality prior at a fixed leaderboard: tests never fetch."""
     from nim import scores
 
-    return mock.patch.object(scores, "load", return_value=cache or ARENA_FIXTURE)
+    return mock.patch.object(scores, "load", return_value=cache or SCORES_FIXTURE)
 
 
 def _fake_report(statuses: dict[str, str], *, catalog=("a", "b"), fetch_ok=True,

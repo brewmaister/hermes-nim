@@ -51,7 +51,7 @@ class Settings:
     # that black-holes for 25 s is unusable in chat whether or not a second attempt agrees. The
     # hysteresis still needs two *runs* before anything is called dead, so this cannot fake a death.
     live_attempts: int = 1
-    # The quality prior is fetched, not typed: a survey refreshes the LMArena leaderboard when the
+    # The quality prior is fetched, not typed: a survey re-reads the Hermes Index when the
     # cache is older than scores_max_age_hours. False pins whatever is cached and stops the fetch.
     scores_refresh: bool = True
     scores_max_age_hours: float = 24.0

@@ -1,5 +1,5 @@
 name: hermes-nim
-version: "0.0.21.1"
+version: "0.0.22.0"
 manifest_version: 2
 api_version: 1
 description: "NVIDIA NIM model health in chat: /nim reports which NIM models are alive, stalled, retired or newly arrived, because NVIDIA publishes none of it. `hermes nim` is the same engine for scripts and cron."
@@ -65,11 +65,11 @@ config_schema:
   scores_refresh:
     type: boolean
     default: true
-    description: "A survey refetches the LMArena leaderboard (public dataset, cached to disk) when the cache is stale. The quality prior is fetched, never typed."
+    description: "A survey re-reads the Hermes Index (portal.nousresearch.com/bench, cached to disk) when the cache is stale. The quality prior is fetched, never typed."
   scores_max_age_hours:
     type: number
     default: 24
-    description: "How old the cached leaderboard may get before a survey refetches it."
+    description: "How old the cached Hermes Index may get before a survey re-reads it."
   language:
     type: string
     default: "auto"

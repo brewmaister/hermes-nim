@@ -35,7 +35,7 @@ PICK_MARK = "⭐️"
 # There is deliberately no glyph for parameter count. An id only yields a size when it spells the
 # size out (`…-30b-a3b`), so a size tag would always repeat what the name already says. The number
 # still appears where it is not redundant: the recommendation footer, for models with no benchmark.
-QUALITY_MARK = "🧠"
+QUALITY_MARK = "🧠"   # Hermes Index (portal.nousresearch.com/bench) — the only quality prior
 SPEED_MARK = "⚡"
 WRITE_MARK = "✍️"   # tokens per second: first byte says when it woke up, this says how fast it writes
 NEW_MARK = "🆕"   # appeared in /v1/models within NEW_WINDOW_DAYS, and is not the install baseline
@@ -187,14 +187,19 @@ def _grouped(report: dict) -> tuple[list[dict], list[dict], list[dict]]:
     return alive, warn, dead
 
 
+def _format_score(published) -> str:
+    """The Hermes Index, one decimal: 24.1 is a measured difference, 24 is a rounding."""
+    return f"{QUALITY_MARK}{published.index:.1f}"
+
+
 def _quality_tag(result: dict) -> str:
-    """🧠 + published index, or nothing at all."""
+    """Source glyph + published score, or nothing at all."""
     published = benchmarks.lookup(str(result.get("model") or ""))
     if published is None:
         return ""
     # "family" is a claim about the number: it is the parent model's score, not this variant's.
     family = f" {t('quality.family')}" if published.inherited else ""
-    return f"{QUALITY_MARK}{published.index:.0f}{family}"
+    return _format_score(published) + family
 
 
 def _write_tag(result: dict) -> str:
@@ -269,7 +274,7 @@ def best_line(report: dict) -> str:
     published = benchmarks.lookup(model)
     why: list[str] = []
     if published is not None:
-        why.append(f"{QUALITY_MARK}{published.index:.0f}")
+        why.append(_format_score(published))
         if published.context:
             why.append(t("rec.ctx", ctx=human_ctx(published.context)))
     else:
@@ -467,8 +472,7 @@ def render_board(report: dict, limit: int = 14) -> str:
                 bits.insert(0, NEW_MARK)
             published = benchmarks.lookup(model)
             if published is not None:
-                bits.insert(0, f"{QUALITY_MARK}{published.index:.0f}"
-                               + (f" {t('quality.family')}" if published.inherited else ""))
+                bits.insert(0, _quality_tag({"model": model}))
 
             if model in routed:
                 bits.append(t("board.yours"))
@@ -527,7 +531,9 @@ def render_scores(report: dict) -> str:
             continue
         scored += 1
         mark = t("scores.family") if found.inherited else t("scores.exact")
-        lines.append(f"🧠 {short_model(model)} — {found.elo:.0f} {mark} ({found.name})")
+        costs = f" · ${found.cost:g}/task" if isinstance(found.cost, (int, float)) else ""
+        lines.append(f"{scores.GLYPH} {short_model(model)} — {found.value:.1f} {mark} "
+                    f"({found.name}){costs}")
     lines += ["", t("scores.coverage", scored=scored, total=len(chat)),
               t("scores.source")]
     return "\n".join(lines)

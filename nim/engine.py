@@ -923,6 +923,10 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
         "attempts": attempts,
         "models": models_by_id,
         "configured_in": used,
+        # What this run measured, as opposed to everything on the board: a scan seeds verdicts for
+        # models it did not probe, so `models` is the board and `probed` is the evidence.
+        "probed": list(targets),
+        "probe_only": only is not None,
         "catalog": live_catalog or previous_catalog,
         "catalog_owners": owners or (previous.get("catalog_owners") or {}),
         "catalog_fetch_ok": catalog_ok,

@@ -10,7 +10,8 @@ header:
   cached: "NVIDIA NIM · {age} · your {models} models{board}"
   board: " · {online}/{listed} listed answer"
   known: "NVIDIA NIM — {models} models known"
-  probe: "NVIDIA NIM scan · just now · your {models} models · {attempts}× each{board}"
+  probe: "NVIDIA NIM scan · just now · measured {models} models · {attempts}× each{board}"
+  probe_subset: " · {total} on the board"
   aborted: "NVIDIA NIM scan — aborted"
   stale_badge: " · ⏳ stale"
 

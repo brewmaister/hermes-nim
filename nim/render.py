@@ -422,8 +422,13 @@ def render_probe(report: dict) -> str:
     if banner:
         return "\n".join([t("header.aborted"), ""] + banner)
     models = report.get("models") or {}
-    header = t("header.probe", models=len(models), attempts=report.get("attempts"),
+    # `models` is the whole board (a scan keeps verdicts it did not re-measure); the header must count
+    # what this run actually probed, or `/nim probe minimax` claims to have measured 86 models.
+    measured = len(report.get("probed") or models)
+    header = t("header.probe", models=measured, attempts=report.get("attempts"),
                board=board_badge(report))
+    if measured != len(models):
+        header += t("header.probe_subset", total=len(models))
     lines = [header, ""] + model_lines(report) + changes_block(report)
     lines += ["", best_line(report), _catalog_footnote(report)]
     return "\n".join(lines)

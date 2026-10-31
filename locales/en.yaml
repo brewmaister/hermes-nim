@@ -139,7 +139,7 @@ usage:
   cfg: "/nim cfg — which NIM models config.yaml references, no network"
   json: "/nim json — the last scan as JSON"
   tail: "/nim version · /nim help"
-  legend: "glyphs — 🥇🥈🥉 top three in list order · 🧠 Hermes Index · 🏛 LMArena Elo (other scale, never mixed) · ⚡ first byte · ✍️ tok/s · 🆕 new · ⚠️ degraded · 🔴 dead"
+  legend: "glyphs — 🥇🥈🥉 one per step, list order · ≈ statistically tied with the row above · 🧠 Hermes Index · 🏛 LMArena Elo (other scale, never mixed) · ⚡ first byte · ✍️ tok/s · 🆕 new · ⚠️ degraded · 🔴 dead"
 
 util:
   guard: "safety classifier"

@@ -1286,8 +1286,8 @@ class RenderTests(unittest.TestCase):
                 mock.patch.object(engine, "primary_source", return_value="lmarena"):
             seats = render.podium(["x/m-one", "x/m-two", "x/m-three"])
         self.assertEqual(seats[0], ("🥇", False))
-        self.assertEqual(seats[1], ("🥇", True))     # interval overlaps → same step, marked ≈
-        self.assertEqual(seats[2], ("🥈", False))    # clear of both → next step
+        self.assertEqual(seats[1], ("🥈", True))     # one medal per step; the tie shows as ≈ on the score
+        self.assertEqual(seats[2], ("🥉", False))    # clear of both
 
     def test_arena_leads_when_asked_to_order_by_it(self):
         """order_by decides both the list order and the star — they must never disagree."""

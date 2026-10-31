@@ -225,26 +225,21 @@ def _interval(model: str) -> tuple[float, float] | None:
 
 
 def podium(models: list[str]) -> list[tuple[str, bool]]:
-    """Medal and tie flag per position, in list order.
+    """One medal per step — 🥇🥈🥉 in list order — plus a flag for a statistically tied row.
 
-    A podium that ignores the published interval is decoration: 1431 (1428-1435) and 1430 (1424-1436)
-    are the same number, so giving them 🥈 and 🥉 claims a difference the source does not support.
-    Rows whose intervals overlap share the medal of the row above, and their number is prefixed with
-    `≈` so the sharing is visible rather than inferred. Competition ranking: 1, 1, 3.
+    Duplicated medals (🥈 🥈) read as a bug, not as a tie, so a tie is said once per row with `≈` on the
+    score instead: the number already carries the published interval, and `≈1430` next to minimax's
+    1431 says "these cannot be separated" without spending a medal twice.
     """
-    medals: list[tuple[str, bool]] = []
-    holder: tuple[float, float] | None = None      # interval of the current medal holder
-    rank = -1
+    seats: list[tuple[str, bool]] = []
+    previous: tuple[float, float] | None = None
     for index, model in enumerate(models):
         interval = _interval(model)
-        tied = index > 0 and interval is not None and holder is not None \
-            and interval[0] <= holder[1] and holder[0] <= interval[1]
-        if not tied:
-            rank += 1
-            holder = interval
-        medal = MEDALS[rank] if 0 <= rank < len(MEDALS) else ""
-        medals.append((medal, tied))
-    return medals
+        tied = index > 0 and interval is not None and previous is not None \
+            and interval[0] <= previous[1] and previous[0] <= interval[1]
+        seats.append((MEDALS[index] if index < len(MEDALS) else "", tied))
+        previous = interval
+    return seats
 
 
 def _quality_tag(result: dict, tied: bool = False) -> str:

@@ -18,8 +18,27 @@ USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "vendor", "scores", 
               "added", "cfg", "json", "legend", "tail")
 
 
+# Grouped, not one flat run: the reader arrives with a question ("how do I check one model?"), and a
+# wall of twelve lines with equal weight makes them read all of them. Order inside a group is by how
+# often the door is used, not alphabetically.
+USAGE_SECTIONS = (
+    ("g_now", ("nim", "cached", "survey")),
+    ("g_yours", ("probe", "probe_named", "speed")),
+    ("g_numbers", ("scores", "vendor", "catalog", "dead", "added")),
+    ("g_config", ("cfg", "json")),
+)
+
+
 def usage() -> str:
-    return "\n".join(t(f"usage.{key}") for key in USAGE_KEYS)
+    lines = [t("usage.title"), ""]
+    for head, keys in USAGE_SECTIONS:
+        lines.append(t(f"usage.{head}"))
+        lines += [t(f"usage.{key}") for key in keys]
+        lines.append("")
+    lines.append(t("usage.tail"))
+    lines += ["", t("usage.glyphs_head")]
+    lines += t("usage.glyph_lines").split("|")
+    return "\n".join(lines)
 
 
 def _print(text: str) -> None:

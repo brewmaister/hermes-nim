@@ -215,23 +215,37 @@ def describe() -> str:
 
     current = settings()
     models = ", ".join(current.shortlist_models()) or t("settings.none")
+    # Grouped the same way as the verbs: measuring, the live door, the survey, ranking, files. Every
+    # setting keeps the reason it holds its value — a knob whose why is missing is a knob you cannot
+    # safely change — but the reason is now a short clause, not a sentence with three semicolons.
     lines = [
         t("settings.intro"),
+        "",
+        t("settings.g_measure"),
         t("settings.ttft", value=f"{current.ttft_seconds:g}"),
         t("settings.attempts", value=current.attempts),
-        t("settings.state_dir", value=current.state_dir or "~/hermes-outputs/nim-probe"),
-        t("settings.shortlist", value=models),
-        t("settings.live_default", value=current.live_default),
-        t("settings.live_grace", value=f"{current.live_grace_seconds:g}"),
         t("settings.recheck", value=f"{current.recheck_ttft_seconds:g}"),
+        "",
+        t("settings.g_live"),
+        t("settings.live_default", value=current.live_default),
         t("settings.live_attempts", value=current.live_attempts, attempts=current.attempts),
+        t("settings.live_grace", value=f"{current.live_grace_seconds:g}"),
+        "",
+        t("settings.g_survey"),
         t("settings.survey", value=current.survey_catalog, workers=current.survey_workers,
           cap=f"{current.survey_ttft_seconds:g}"),
+        "",
+        t("settings.g_rank"),
+        t("settings.order", value=current.order_by),
         t("settings.recommend", value=f"{current.recommend_max_ttft_s:g}",
           tps=f"{current.recommend_min_tps:g}"),
-        t("settings.scores", value=current.scores_refresh, hours=f"{current.scores_max_age_hours:g}",
-          arena=current.arena_scores),
-        t("settings.order", value=current.order_by),
+        t("settings.recommend_why"),
+        t("settings.scores", value=current.scores_refresh, arena=current.arena_scores),
+        t("settings.scores_why", hours=f"{current.scores_max_age_hours:g}"),
+        "",
+        t("settings.g_files"),
+        t("settings.state_dir", value=current.state_dir or "~/hermes-outputs/nim-probe"),
+        t("settings.shortlist", value=models),
         t("settings.language", value=current.language),
     ]
     return "\n".join(lines)

@@ -969,10 +969,12 @@ class LocalizationTests(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "es"}):
             i18n.reset_cache()
-            self.assertIn("escaneo en vivo", commands.usage())
+            help_text = commands.usage()
+        self.assertIn("comandos", help_text)
+        self.assertIn("tus modelos", help_text)
         with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
             i18n.reset_cache()
-            self.assertIn("live scan, now", commands.usage())
+            self.assertIn("measure every listed model", commands.usage())
 
     def test_missing_key_falls_back_to_english_not_to_the_key(self):
         from nim import i18n

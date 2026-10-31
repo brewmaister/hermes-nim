@@ -16,6 +16,7 @@ import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -884,7 +885,7 @@ class NewModelTests(unittest.TestCase):
     """🆕 has to mean "arrived", not "was there on install day"."""
 
     def test_the_install_baseline_is_never_flagged_new(self):
-        def fake_probe(_b, model, _k, _t, attempts, _s):
+        def fake_probe(_b, model, _k, _t, attempts, _s, **_kw):
             return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
                     "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
                     "checked_at": engine._now_iso()}
@@ -900,7 +901,7 @@ class NewModelTests(unittest.TestCase):
         self.assertNotIn(render.NEW_MARK, render.render_board(first))
 
     def test_a_model_that_appears_later_is_flagged(self):
-        def fake_probe(_b, model, _k, _t, attempts, _s):
+        def fake_probe(_b, model, _k, _t, attempts, _s, **_kw):
             return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
                     "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
                     "checked_at": engine._now_iso()}
@@ -1198,7 +1199,7 @@ moa:
         """The count in the progress message is 4 for this box because 4 is what config.yaml says."""
         probed: list[str] = []
 
-        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger, **_kw):
             probed.append(model)
             return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": 1,
                     "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
@@ -1267,6 +1268,22 @@ class RenderTests(unittest.TestCase):
         self.assertIn("🥇 a — ⚡0.5s", text)
         self.assertIn("🔴 b — stalled", text)
         self.assertIn("2 models", text)
+
+    def test_probe_takes_model_names_and_a_fragment_is_enough(self):
+        """`/nim probe minimax` must not require a 30-character id, and ambiguity must say so."""
+        with mock.patch.object(commands.engine, "load_state",
+                               return_value={"catalog": ["minimaxai/minimax-m3.1-flash",
+                                                         "mistralai/mistral-large-4-1t-a52b"]}), \
+                mock.patch.object(commands.engine, "configured_models", return_value={}), \
+                mock.patch.object(commands.settings, "settings",
+                                  return_value=SimpleNamespace(shortlist_models=lambda: [],
+                                                               state_dir="/tmp/x")):
+            self.assertEqual(commands.resolve_models(["minimax"]),
+                             ["minimaxai/minimax-m3.1-flash"])
+            self.assertEqual(commands.resolve_models(["mistralai/mistral-large-4-1t-a52b"]),
+                             ["mistralai/mistral-large-4-1t-a52b"])
+            with self.assertRaises(LookupError):
+                commands.resolve_models(["mi"])          # two hits: ask again, do not guess
 
     def test_a_miss_is_trusted_for_a_week_and_no_longer(self):
         """`not on the leaderboard` is a fact for a week, not a question to re-ask on every survey."""
@@ -1410,7 +1427,7 @@ class ScanTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def _scan(self, statuses: dict[str, str], catalog=("nvidia/a", "nvidia/b")) -> dict:
-        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger, **_kw):
             status = statuses.get(model, "ok")
             return {"model": model, "status": status, "ok_attempts": 1,
                     "attempts": max(1, attempts), "ttft_s": 0.4 if status == "ok" else None,
@@ -1445,7 +1462,7 @@ class ScanTests(unittest.TestCase):
         """Run one scan and record the first-byte cap each model was probed with."""
         seen: dict[str, float] = {}
 
-        def fake_probe(_base, model, _key, ttft, attempts, _stagger):
+        def fake_probe(_base, model, _key, ttft, attempts, _stagger, **_kw):
             seen[model] = ttft
             return {"model": model, "status": "stall", "ok_attempts": 0, "attempts": 1,
                     "ttft_s": None, "trials": ["stall:25"], "detail": "",
@@ -1470,7 +1487,7 @@ class ScanTests(unittest.TestCase):
         """The board needs all 85 measured, but only the models you point at may raise an alert."""
         probed: list[tuple[str, int, float]] = []
 
-        def fake_probe(_base, model, _key, ttft, attempts, _stagger):
+        def fake_probe(_base, model, _key, ttft, attempts, _stagger, **_kw):
             probed.append((model, attempts, ttft))
             status = "ok" if model == "nvidia/a" else "http_404"
             return {"model": model, "status": status, "ok_attempts": 1, "attempts": attempts,
@@ -1493,7 +1510,7 @@ class ScanTests(unittest.TestCase):
 
     def test_chat_views_stay_on_the_models_you_point_at_after_a_survey(self):
         """A stored survey holds 85 verdicts; `/nim` must not turn into a catalog dump."""
-        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger, **_kw):
             return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
                     "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
                     "checked_at": engine._now_iso()}
@@ -1512,7 +1529,7 @@ class ScanTests(unittest.TestCase):
 
     def test_a_chat_scan_does_not_erase_the_board(self):
         """The bug behind "it still says five models": /nim used to overwrite the survey's 85 verdicts."""
-        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger, **_kw):
             return {"model": model, "status": "ok", "ok_attempts": 1, "attempts": attempts,
                     "ttft_s": 0.4, "trials": ["ok:0.4"], "detail": "",
                     "checked_at": engine._now_iso()}
@@ -1533,7 +1550,7 @@ class ScanTests(unittest.TestCase):
                          len(render.render_catalog(after_survey).splitlines()))
 
     def test_a_survey_never_alerts_about_models_you_do_not_point_at(self):
-        def fake_probe(_base, model, _key, _ttft, attempts, _stagger):
+        def fake_probe(_base, model, _key, _ttft, attempts, _stagger, **_kw):
             return {"model": model, "status": "http_404", "ok_attempts": 0, "attempts": attempts,
                     "ttft_s": None, "trials": ["http_404"], "detail": "",
                     "checked_at": engine._now_iso()}

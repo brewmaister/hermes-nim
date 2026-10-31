@@ -52,6 +52,9 @@ role:
   moa: "moa"
   shortlist: "candidato"
 
+probe:
+  ambiguous: "🤔 {detail} — sé más específico"
+
 rec:
   tier: "nivel {tier}"
   line: "→ mejor para chat: {model} — {evidence}"
@@ -127,7 +130,7 @@ cfg:
 usage:
   nim: "/nim — escaneo en vivo, ahora (mide cada modelo; ~15-40 s)"
   cached: "/nim cached — el último escaneo, al instante, sin red"
-  probe: "/nim probe — escaneo en vivo de los modelos de tu config + candidatos\n            (~30-60 s: un modelo que nunca responde cuesta dos esperas de 25 s)"
+  probe: "/nim probe [modelo…] — escaneo en vivo de los modelos de tu config + candidatos; nombra modelos para medir solo esos (basta un fragmento, p. ej. /nim probe minimax)\n            (~30-60 s: un modelo que nunca responde cuesta dos esperas de 25 s)"
   speed: "/nim speed [n] — escaneo cronometrado: primer byte y respuesta completa, mediana de n intentos (3 por defecto)"
   catalog: "/nim catalog — el tablero en línea/caído: lo que NVIDIA lista vs lo que responde"
   vendor: "/nim vendor — quién publica lo que responde, con latencia y velocidad medianas"

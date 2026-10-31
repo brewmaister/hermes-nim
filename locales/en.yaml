@@ -53,6 +53,9 @@ role:
   moa: "moa"
   shortlist: "shortlist"
 
+probe:
+  ambiguous: "🤔 {detail} — be more specific"
+
 rec:
   tier: "tier {tier}"
   line: "→ best for chat: {model} — {evidence}"
@@ -128,7 +131,7 @@ cfg:
 usage:
   nim: "/nim — live scan, now (measures every model; ~15-40 s)"
   cached: "/nim cached — the last scan, instantly, no network"
-  probe: "/nim probe — live scan of the models your config uses + the shortlist\n            (~30-60 s: a model that never answers costs two 25 s stalls)"
+  probe: "/nim probe [model…] — live scan of the models your config uses + the shortlist; name models to measure only those (a fragment is enough, e.g. /nim probe minimax)\n            (~30-60 s: a model that never answers costs two 25 s stalls)"
   speed: "/nim speed [n] — timed scan: first byte and full answer, median of n attempts (default 3)"
   catalog: "/nim catalog — the online/offline board: what NVIDIA lists vs what answers"
   vendor: "/nim vendor — who publishes what answers, with median latency and writing speed"

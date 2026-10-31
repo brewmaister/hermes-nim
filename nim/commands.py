@@ -57,7 +57,8 @@ def _days(args: list[str], fallback: float = 7.0) -> float:
     return fallback
 
 
-def do_scan(*, attempts: int | None = None, workers: int | None = None) -> dict:
+def do_scan(*, attempts: int | None = None, workers: int | None = None,
+            only: list[str] | None = None) -> dict:
     current = settings.settings()
     return engine.scan(
         base=current.api_base,
@@ -68,7 +69,34 @@ def do_scan(*, attempts: int | None = None, workers: int | None = None) -> dict:
         configured_dir=current.state_dir,
         recheck_ttft=current.recheck_ttft_seconds,
         workers=workers,
+        only=only,
     )
+
+
+def resolve_models(names: list[str], report: dict | None = None) -> list[str]:
+    """Turn what the user typed into model ids: exact ids, or the unique substring that matches one.
+
+    `/nim probe minimax` should not require copying a 30-character id off the board, and an ambiguous
+    fragment must say so rather than silently picking the first hit — probing the wrong model and
+    reporting it as fact is worse than asking again.
+    """
+    known = set((engine.load_state(settings.settings().state_dir).get("catalog") or []))
+    known |= set((engine.configured_models() or {}))
+    known |= set(settings.settings().shortlist_models())
+    resolved: list[str] = []
+    for raw in names:
+        if raw in known:
+            resolved.append(raw)
+            continue
+        needle = raw.lower()
+        hits = sorted(model for model in known if needle in model.lower())
+        if len(hits) == 1:
+            resolved.append(hits[0])
+        elif hits:
+            raise LookupError(f"{raw} matches {len(hits)} models: " + ", ".join(hits[:6]))
+        else:
+            resolved.append(raw)          # not in the catalogue yet: try it as typed
+    return resolved
 
 
 def do_survey() -> dict:
@@ -159,7 +187,13 @@ def dispatch(verb: str, extra_args: list[str], *, force_scan: bool = False) -> t
 
     report = None
     if force_scan or verb == "probe":
-        report = do_scan()
+        only = None
+        if verb == "probe" and extra_args:
+            try:
+                only = resolve_models(extra_args)
+            except LookupError as exc:
+                return t("probe.ambiguous", detail=str(exc)), 2
+        report = do_scan(only=only)
         if report.get("error"):
             return t("empty.error", error=report["error"]), 2
     else:

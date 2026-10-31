@@ -287,13 +287,22 @@ def _maybe_round(value: float | None, digits: int) -> float | None:
 
 
 def probe(base: str, model: str, key: str, ttft: float = 25.0, attempts: int = 2,
-          stagger: float = 1.5, endpoint: str | None = None) -> dict:
-    """Several attempts, because one is a coin flip on a replica-pooled gateway."""
+          stagger: float = 1.5, endpoint: str | None = None,
+          recheck_ttft: float = 0.0) -> dict:
+    """Several attempts, because one is a coin flip on a replica-pooled gateway.
+
+    A model that black-holed its first attempt gets `recheck_ttft` for the retry: the question has
+    changed from "how fast is it" to "is it still silent", and listening 25 s twice to learn nothing is
+    how a probe door ends up taking a minute for one dead model.
+    """
     trials: list[dict] = []
     for index in range(max(1, attempts)):
         if index:
             time.sleep(max(0.0, stagger))
-        trials.append(attempt(base, model, key, ttft, endpoint))
+        cap = ttft
+        if index and recheck_ttft and trials and trials[0]["kind"] == "stall":
+            cap = min(ttft, recheck_ttft)
+        trials.append(attempt(base, model, key, cap, endpoint))
         # A hard verdict will not change on retry.
         if trials[-1]["kind"] in {"eol", "not_provisioned", "auth_error"}:
             break
@@ -720,7 +729,8 @@ def added_ids(report: dict, days: float = 7.0) -> list[str]:
 def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
          stagger: float = 1.5, extra: list[str] | None = None, key: str | None = None,
          config_path: Path | None = None, configured_dir: str = "", workers: int | None = None,
-         recheck_ttft: float = 0.0, survey: bool = False, survey_ttft: float = 0.0) -> dict:
+         recheck_ttft: float = 0.0, survey: bool = False, survey_ttft: float = 0.0,
+         only: list[str] | None = None) -> dict:
     """Probe the models your config uses (plus `extra`), diff the catalog, persist, return the report.
 
     `report["changes"]` holds only transitions worth telling a human about: hysteresis means a model
@@ -735,8 +745,8 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
     if not credential["ok"]:
         return _credential_report(base, credential, configured_dir)
 
-    used = configured_models(config_path)
-    targets = list(used)
+    used = configured_models(config_path) if only is None else {}
+    targets = list(used) if only is None else list(only)
     for model in extra or []:
         if model and model not in targets:
             targets.append(model)
@@ -783,7 +793,7 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
     with ThreadPoolExecutor(max_workers=width) as pool:
         results = list(pool.map(
             lambda model: probe(base, model, resolved_key, cap_for(model), attempts_for(model),
-                                stagger),
+                                stagger, recheck_ttft=recheck_ttft),
             targets))
     rejected = credential_failure(results)
     if rejected is not None:

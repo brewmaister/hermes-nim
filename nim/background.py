@@ -23,7 +23,10 @@ from typing import Optional
 
 from . import engine, settings
 
-logger = logging.getLogger("hermes-nim.background")
+# __name__, not a hand-written name: the gateway installs its handlers on loggers under
+# hermes_plugins.*, so a logger called "hermes-nim.background" logs into the void — which is how the
+# scanner reported "starting" and then vanished without a single line about what it did next.
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

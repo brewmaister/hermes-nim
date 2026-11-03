@@ -36,14 +36,23 @@ def register(ctx) -> None:
 
     # Start the background scanner — keeps state.json fresh without a cron job.
     # Intervals come from settings (config.yaml → plugins.entries.hermes-nim.settings).
+    # We register a gateway:startup hook because the event loop isn't running yet
+    # when plugins load; the hook fires after the gateway is fully started.
     from .nim.settings import settings as _current_settings
     s = _current_settings()
-    logger.info("hermes-nim: starting background scanner (config_every=%.1fm survey_every=%.1fm)",
+    logger.info("hermes-nim: registering gateway:startup hook for background scanner "
+                "(config_every=%.1fm survey_every=%.1fm)",
                 s.background_config_scan_min, s.background_survey_min)
-    start_background_scanner(ctx, BackgroundConfig(
-        config_scan_interval_min=s.background_config_scan_min,
-        survey_interval_min=s.background_survey_min,
-    ))
+
+    def _start_scanner_hook(_ctx):
+        from .nim.settings import settings as _s
+        _settings = _s()
+        start_background_scanner(ctx, BackgroundConfig(
+            config_scan_interval_min=_settings.background_config_scan_min,
+            survey_interval_min=_settings.background_survey_min,
+        ))
+
+    ctx.register_hook("gateway:startup", _start_scanner_hook)
 
     def _chat_command(raw_args: str = "", **kwargs):
         """Bind the plugin context so the handler can say "measuring…" before a live probe.

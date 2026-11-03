@@ -1,5 +1,5 @@
 name: hermes-nim
-version: "0.0.36.4"
+version: "0.0.37.0"
 manifest_version: 2
 api_version: 1
 description: "NVIDIA NIM model health in chat: /nim reports which NIM models are alive, stalled, retired or newly arrived, because NVIDIA publishes none of it. `hermes nim` is the same engine for scripts and cron."

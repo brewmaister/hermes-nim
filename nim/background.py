@@ -24,8 +24,6 @@ from typing import Optional
 from . import engine, settings
 
 logger = logging.getLogger("hermes-nim.background")
-print("hermes-nim.background: module loaded", flush=True)
-print(f"hermes-nim.background: logger={logger.name} level={logger.level} effective={logger.getEffectiveLevel()}", flush=True)
 
 
 @dataclass(frozen=True)
@@ -133,9 +131,8 @@ def start_background_scanner(ctx, cfg: Optional[BackgroundConfig] = None) -> Non
     unload/force reload cancels it cleanly.
     """
     global _task
-    logger.info("hermes-nim: start_background_scanner called, _task=%s", _task)
     if _task is not None and not _task.done():
-        logger.info("hermes-nim: background scanner already running, skipping")
+        logger.debug("hermes-nim: background scanner already running")
         return
 
     cfg = cfg or BackgroundConfig()
@@ -155,7 +152,6 @@ def start_background_scanner(ctx, cfg: Optional[BackgroundConfig] = None) -> Non
     # have a loop, so we catch that case.
     try:
         loop = asyncio.get_running_loop()
-        logger.info("hermes-nim: got running loop, creating background scanner task")
         _task = loop.create_task(_runner(), name=f"plugin:{ctx.plugin_id}:background-scanner")
         logger.info(
             "hermes-nim: background scanner started (config_every=%.1fm survey_every=%.1fm)",
@@ -166,13 +162,6 @@ def start_background_scanner(ctx, cfg: Optional[BackgroundConfig] = None) -> Non
         # No running loop (e.g. CLI context) — ctx.spawn_task will fail too,
         # so we just log and skip. The gateway reload will start it properly.
         logger.info("hermes-nim: no event loop at load, background scanner will start on gateway reload")
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("hermes-nim: failed to start background scanner: %s", exc)
-    logger.info(
-        "hermes-nim: background scanner started (config_every=%.1fm survey_every=%.1fm)",
-        cfg.config_scan_interval_min,
-        cfg.survey_interval_min,
-    )
 
 
 def stop_background_scanner() -> None:

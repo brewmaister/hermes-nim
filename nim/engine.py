@@ -745,7 +745,11 @@ def scan(*, base: str = DEFAULT_BASE, ttft: float = 25.0, attempts: int = 2,
     if not credential["ok"]:
         return _credential_report(base, credential, configured_dir)
 
-    used = configured_models(config_path) if only is None else {}
+    # `only` narrows what gets PROBED, never what the config points at. Resolving `used = {}` for a
+    # targeted probe wrote an empty `configured_in` into the shared state, which cost the board every
+    # `in config` / `shortlist` label and dropped its `watched` filter — so the next render listed the
+    # guard models and embedders as chat, and the header claimed "your 85 models".
+    used = configured_models(config_path)
     targets = list(used) if only is None else list(only)
     for model in extra or []:
         if model and model not in targets:

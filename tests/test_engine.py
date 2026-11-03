@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import shutil
 import socket
 import sys
 import tempfile
@@ -979,6 +980,39 @@ class LocalizationTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
             i18n.reset_cache()
             self.assertIn("measure every listed model", commands.usage())
+
+    def test_a_targeted_probe_does_not_erase_what_the_config_points_at(self):
+        """`only=` narrows the probe, not the config map.
+
+        Resolving `used = {}` for a targeted probe wrote `configured_in: {}` into the shared state,
+        which silently cost the board its `in config` labels and its watched() filter — a two-model
+        probe of the dead glm/deepseek ids turned the next board into "your 85 models" with the guard
+        models listed as chat.
+        """
+        from nim import engine, settings as settings_module
+
+        dirname = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, dirname, True)
+        os.environ["NIM_STATE_DIR"] = dirname
+        self.addCleanup(os.environ.pop, "NIM_STATE_DIR", None)
+        configured = engine.configured_models()
+
+        with install_scores(), mock.patch.object(engine, "api_key", return_value="k"), \
+                mock.patch.object(engine, "key_status", return_value={"ok": True}), \
+                mock.patch.object(engine, "catalog_entries", return_value=([], {})), \
+                mock.patch.object(engine, "probe", side_effect=lambda *a, **k: {
+                    "model": a[1], "status": "ok", "ttft_s": 0.2, "tries": 1, "answered": 1,
+                    "tokens": None, "http": 200, "endpoint": "chat", "error": None}):
+            only = sorted(configured)[:2]
+            report = engine.scan(only=only, configured_dir=dirname, attempts=1, ttft=1.0)
+
+        self.assertTrue(report.get("probe_only"))
+        self.assertEqual(sorted(report.get("probed") or []), only)
+        # the map the config resolves to is still there, complete — not narrowed to the two probed
+        self.assertEqual(sorted((report.get("configured_in") or {})), sorted(configured))
+        # and it survived the round trip through the state file
+        self.assertEqual(sorted((engine.load_state(dirname).get("configured_in") or {})),
+                         sorted(configured))
 
     def test_the_help_page_earns_the_rich_path(self):
         """sendRichMessage only fires for a construct MarkdownV2 cannot express.

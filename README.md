@@ -5,40 +5,56 @@ models still answer.
 
 ```
 /nim
-**NVIDIA NIM** · 14 min ago · 7 models
+NVIDIA NIM · 6 min ago · your 11 models · 17/85 listed answer
 
-★ minimax-m3.1-flash — 🧠29 family · ⚡0.41s · shortlist
-✓ nemotron-3-ultra-550b-a55b — 🧠23 · ⚡0.55s · fallback 2, moa
-✓ nemotron-3.5-lightning-30b-a3b — ⚡0.25s · free, fallback 1
-✓ muse-glimmer-30b — ⚡4.41s · shortlist
-✓ gpt-oss-20b — ⚡0.23s · fallback 4
-✓ step-5-preview — ⚡0.37s · shortlist
-✓ deepseek-v4.1-flash — ⚡0.59s · fallback 3
+🥇 nemotron-3-ultra-550b-a55b — 🏛1445 family · ⚡0.76s · ✍️121.5t/s
+🥈 mistral-large-4-1t-a52b — 🏛1430 family · ⚡0.59s · ✍️100.4t/s
+🥉 nemotron-3.5-super-vl-120b-a12b — 🏛1405 family · ⚡0.5s · ✍️234.6t/s
+· muse-glimmer-30b — 🏛≈1389 family · ⚡1.56s · ✍️7.5t/s · shortlist
+· nemotron-3.5-lightning-30b-a3b — 🏛1331 family · ⚡0.45s · ✍️199.5t/s · free
+· nemotron-3-nano-omni-30b-a3b-reasoning — ⚡0.26s · ✍️178.9t/s · shortlist
 
-**★ recommended** minimaxai/minimax-m3.1-flash — 🧠29 · 1M ctx · ⚡0.41s · 1/1
-catalog: 85 listed · 85 tracked
+⚠️ minimax-m3.1-flash — 🏛1431 family · rate limited · shortlist
 
-/nim probe · /nim speed · /nim dead · /nim catalog
+🔴 gpt-oss-20b — 🏛1287 · stalled · fallback 4
+🔴 step-5-preview — 🏛1443 · stalled · shortlist
+
+→ best for chat: nvidia/nemotron-3-ultra-550b-a55b — 🏛1445 · ⚡0.76s · 1/1 · ✍️121.5t/s
+board: 17 of 85 measured models answer · 85 listed · surveyed 6 min ago
 ```
+
+Real output, one account: two models in the same fallback chain are dead, one is throttled, and the
+three medals are positions in the displayed order — not a verdict about the models' quality beyond the
+numbers printed next to them. `≈` marks a score inside the previous row's confidence interval.
 
 **The glyphs are the labels:**
 
 | Glyph | Means | Source |
 |---|---|---|
-| 🧠 | published benchmark index (Artificial Analysis) | third-party run, dated in `nim/benchmarks.py` |
+| 🥇🥈🥉 | positions 1-3 of the displayed order | this plugin |
+| ≈ | statistically tied with the row above | the source's own interval |
+| 🧠 | Hermes Index, 0-100 agentic | `portal.nousresearch.com/bench`, fetched and dated |
+| 🏛 | LMArena Elo | LMArena, fetched and dated |
 | ⚡ | measured time to first byte | this plugin, just now |
-| ★ | the recommended model | computed, see below |
+| ✍️ | measured tokens per second | this plugin, just now |
+| 🆕 | arrived in the catalog within 7 days | catalog history, this plugin |
+| ⚠️ | degraded (flaky, throttled, rate limited) | this plugin |
+| 🔴 | dead (stalled, retired, not provisioned) | this plugin |
+| ⌛️ | age of the number in the header | this plugin |
+| 🗒 | catalog size | `/v1/models` |
+| 🟢 | chat models answering · 🛠 utility models | this plugin |
 
-A model with no published score shows only `⚡` — no glyph is ever filled in with a guess, and there
-is no parameter-count glyph at all: an id only yields a size when it spells the size out, so a `30B`
-tag would always repeat what the name already says. The size appears where it is not redundant — in
-the recommendation footer, for a model with no benchmark. `🧠29 family` means the score belongs to
-the model family, not to that exact variant.
+**One scale per column, never averaged.** 🧠 and 🏛 measure different things, so `order_by` decides
+which one leads, and that table alone sets the order, the printed score and the medals; models it does
+not rate sort below it. `🏛1445 family` means the score belongs to the model family, not to that exact
+variant.
 
-- **`/nim`** — the last scan, instantly. No agent turn, no tokens.
-- **`/nim probe`** — live scan of the NIM models your config uses plus a shortlist of candidates.
-- **`hermes nim`** — the same engine from a shell, for scripts and cron (`--json` for machines).
-- **`scripts/nim-watch.py`** — the cron door: prints nothing unless something changed.
+- **`/nim`** — a live survey of every listed model (~30 s). No agent turn, no tokens.
+- **`/nim cached`** — the last scan, instantly, no network.
+- **`/nim probe [model…]`** — your config models plus the shortlist, or exactly the ones you name.
+- **`hermes nim`** — the same engine from a shell (`--json` for machines).
+- **`nim/background.py`** — keeps the state fresh on its own, no cron required (see
+  [Unattended watching](#unattended-watching)).
 
 ### Realtime by default
 
@@ -85,7 +101,8 @@ drift. The glyphs stay in both — they are content, not decoration.
 - **No repeated size.** `nemotron-3.5-lightning-30b-a3b` already says 30B; the tag only appears when
   the id does not say it.
 - **A blank line instead of a header** between healthy, flaky and dead models.
-- **`★` marks the recommendation**, and the footer names it once with its evidence.
+- **`🥇🥈🥉` mark positions, one per position, and the footer names the chat pick once with its
+  evidence.** A tie is `≈` on the score, never a duplicated medal.
 - Roles are shortened (`free route` → `free`) but not abbreviated to codes nobody can read.
 
 ## Why this exists
@@ -153,27 +170,27 @@ happened can never read as success.
 `/nim probe` is the slow one on purpose: a model that never answers costs two 25 s stalls before it
 can honestly be called dead. Everything else renders cached state.
 
-## Ordering — and what "(recommended)" means
+## Ordering — and what `→ best for chat` means
 
-Models that answered are listed first, strongest first, on evidence in descending order of trust:
+Two fetched tables rate models, on two different scales, and **`order_by` decides which one leads**:
 
-1. **A published benchmark index** (`nim/benchmarks.py`) — Artificial Analysis Intelligence Index,
-   with the source URL and the date it was read stored beside it. Minimax-M3 scores **29**,
-   Nemotron-3-Ultra **23**. External evidence, labelled as external: the line says `AA 29`, and a
-   variant with no published score of its own says `AA 29 family` so nobody reads it as a
-   measurement of that exact model.
-2. **Otherwise the parameter count in the model id** — `nemotron-3.5-lightning-30b-a3b` → 30B. A
-   weak prior, but it is the vendor's own number rather than a guess, and it beats ranking by
-   nothing. Models with neither an index nor a stated size sort last and show no number at all.
-3. **Then measured behaviour** — attempts-answered ratio, then time to first byte.
+- **🧠 Hermes Index** (`portal.nousresearch.com/bench`) — 0-100, agentic, ~18 rows.
+- **🏛 LMArena** — Elo from human preference, the widest coverage of a NIM account by far.
 
-**(recommended)** is a separate, narrower claim: the highest-ranked model that answered *every*
-attempt **and** emits a first byte within 5 s. Ranking alone is not a recommendation — the smartest
-model on the board is useless in a chat loop if it takes 40 s to start talking — so speed is a gate,
-not a tie-break. Exactly one model carries the tag, or none does.
+Neither is a superset, so they are never averaged. The leading table — `arena` by default — sets the
+list order, the score printed on each row, and the medals; models it does not rate sort below it and
+cannot take 🥇. Every score keeps the source's own confidence interval, which is what `≈` prints: two
+rows whose intervals overlap are one number twice, and the medal still goes to one of them because the
+reader asked for one pick per position.
 
-That distinction is the point of the two: ranking answers "what is strongest", the tag answers "what
-should I use right now". They disagree whenever the strongest model is slow.
+`→ best for chat` is a narrower claim than 🥇, and it is normal for them to disagree: the pick must be a
+chat model (not a guard or an embedder), answer within `recommend_max_ttft_s` (5 s), be graded `ok`, and
+a scored model must also write at `recommend_min_tps` (25 t/s) to keep the top tier. Ranking alone is
+not a recommendation — the smartest model on the board is useless in a chat loop if it takes 40 s to
+start talking — so speed is a gate, not a tie-break. Exactly one model is named, or none is.
+
+That distinction is the point of the two: ranking answers "what is strongest", the footer pick answers
+"what should I use right now". They disagree whenever the strongest model is slow.
 
 ## When the key is the problem
 
@@ -242,40 +259,58 @@ before any `content`, so a healthy one looks broken at `max_tokens: 8`. Liveness
 | `api_base` | `https://integrate.api.nvidia.com/v1` | for a proxied or self-hosted gateway |
 | `ttft_seconds` | `25` | NIM cold starts run 15–20 s; below 20 misreads them as dead |
 | `attempts` | `2` | one call lies |
+| `recheck_ttft_seconds` | `8` | a model already marked dead only has to emit a byte (`0` = use `ttft_seconds`) |
 | `stagger_seconds` | `1.5` | pause between attempts |
 | `state_dir` | `~/hermes-outputs/nim-probe` | shared history; set the same path across profiles |
-| `shortlist` | three known-good candidates | models to check that are *not* in your config |
+| `shortlist` | empty | extra models to watch that are *not* in your config |
+| `live_default` | `true` | `/nim` measures; `cached` is a separate verb |
+| `live_attempts` | `1` | interactive `/nim`; `/nim probe` uses `attempts` |
+| `live_grace_seconds` | `20` | a double-tap reuses a scan younger than this |
+| `survey_catalog` | `true` | `/nim` surveys every listed model |
+| `survey_workers` | `20` | 20 measured 12 s for 85 models; 28 gained nothing and hit 429 |
+| `survey_ttft_seconds` | `10` | the survey's own cap, so 9 black-holed models cost 10 s, not 225 s |
+| `order_by` | `arena` | which table leads: `arena` 🏛 · `index` 🧠 · `speed` ✍️ |
+| `recommend_max_ttft_s` | `5` | the footer pick must answer this fast to stay eligible |
+| `recommend_min_tps` | `25` | a scored model must write this quickly to keep the top tier |
+| `scores_refresh` / `arena_scores` | `true` | refetch the indexes when stale; fill gaps from LMArena |
+| `background_config_scan_min` | `10` | how often the scanner re-probes your config models (`0` = off) |
+| `background_survey_min` | `60` | how often it surveys the whole catalog (`0` = off) |
+| `language` | `auto` | `auto` follows `display.language`; `en` / `es` pin it |
 
 ## Unattended watching
 
-`scripts/nim-watch.py` is designed for a `no_agent` Hermes cron job: **stdout is the message and
-empty stdout sends nothing**, so a healthy tick is silent.
+The plugin watches on its own. `nim/background.py` starts a daemon thread with its own asyncio loop when
+the plugin loads — no cron job, no gateway loop, nothing to schedule:
 
-```bash
-hermes cron create "every 6h"        # then point the job's script at ~/.hermes/scripts/nim-watch.py
-```
+- **config scan**, every `background_config_scan_min` (10) — the models your config points at plus the
+  shortlist, which is the data the fallback chain depends on;
+- **catalog survey**, every `background_survey_min` (60) — every listed model, which keeps `/nim
+  catalog`, `/nim added`, `/nim dead` and the medals current.
 
-Copy `scripts/nim-watch.py` to `~/.hermes/scripts/` and repoint the job there, or run
-`hermes nim watch` from your own scheduler. Do not also pass `--send` when the cron engine already
-delivers stdout — every alert would arrive twice.
+Both write the same `state.json` `/nim cached` reads, so the chat door and the background never
+disagree. Every sweep logs a start and a done line with counts; a scanner that stops working is
+therefore visible in `~/.hermes/logs/gateway.log` instead of looking like a quiet one.
 
-It shares the state file with `/nim`, so the two never disagree, and a model is only announced as
-dead once two consecutive runs agree (and only once, until it recovers). Without that hysteresis a
-flapping provider produces alarm spam every tick.
+`scripts/nim-watch.py` still exists for people who want a message rather than a fresh state file: it is
+a `no_agent` cron script whose **stdout is the message and empty stdout sends nothing**, so a healthy
+tick is silent. A model is only announced as dead once two consecutive runs agree (and only once, until
+it recovers) — without that hysteresis a flapping provider produces alarm spam every tick. Do not pass
+`--send` when the cron engine already delivers stdout, or every alert arrives twice.
 
 ## Honest limits
 
 - **No usage or quota data.** The free tier exposes no per-account usage endpoint; the only quota
   signal is a `429`. `/nim` reports throttling, not token spend. Real accounting needs
   instrumentation at the provider layer, not at the model-health layer.
-- **The full catalog is not probed.** 85 models × a 25 s stall cap is minutes of waiting. `/nim`
-  probes what your config uses plus the shortlist; new arrivals are probed once when they appear.
+- **The catalog survey is a single sample at a 10 s cap.** 85 models × 25 s would be an hour, so the
+  survey asks each id for one byte within 10 s; `/nim probe` is the door that spends the full cap and
+  two attempts on the models you actually route to.
 - **A quiet report is not a guarantee.** A model that answered during the scan can wedge a minute
-  later. That is why the watchdog exists as well as the command.
-- **The benchmark table is small and hand-maintained.** Two families have published scores; every
-  other model falls back on its id's parameter count, which is a much weaker signal — a 550B model
-  can be beaten by a 428B one, as MiniMax-M3 beats Nemotron-3-Ultra on the index while carrying
-  fewer parameters. Treat the ordering as a prior, not a verdict.
+  later, which is why the scanner keeps re-measuring instead of trusting one board.
+- **A leaderboard is a prior, not a verdict.** Both sources are fetched, dated and cached — never
+  typed — and both rate a minority of what NIM serves, so an unrated model is printed as unrated rather
+  than given a proxy score. A big id is not evidence: a 550B model can be beaten by a 428B one, and
+  measured speed is frequently the opposite of the ranking.
 
 ## Localization
 
@@ -283,10 +318,19 @@ Every user-facing string lives in `locales/`, not in the Python. Shipped: **en**
 register — a colleague, not a manual).
 
 ```
-/nim                 →  **NVIDIA NIM** · hace 28 min · 7 modelos
-                        ★ minimax-m3.1-flash — 🧠29 family · ⚡0.56s · candidato
-                        **★ recomendado** minimaxai/minimax-m3.1-flash — 🧠29 · 1M de contexto · ⚡0.56s · 1/1
+/nim cached          →  NVIDIA NIM · hace 6 min · tus 11 modelos · 17/85 listados responden
+
+                        🥇 nemotron-3-ultra-550b-a55b — 🏛1445 familia · ⚡0.76s · ✍️121.5t/s
+                        🥈 mistral-large-4-1t-a52b — 🏛1430 familia · ⚡0.59s · ✍️100.4t/s
+                        · muse-glimmer-30b — 🏛≈1389 familia · ⚡1.56s · ✍️7.5t/s · candidato
+
+                        → mejor para chat: nvidia/nemotron-3-ultra-550b-a55b — 🏛1445 · ⚡0.76s · 1/1
 ```
+
+`/nim help` and the settings block are written in rich markdown (headings, bullets, a table for the
+glyphs), so Telegram renders them client-side through Bot API 10.1's `sendRichMessage` — which means
+copying the message keeps the formatting. The tabular reports stay on MarkdownV2 on purpose: a client
+renderer would collapse the column alignment.
 
 Language resolution, first hit wins: an explicit `lang=` → `NIM_LANGUAGE` → `HERMES_LANGUAGE` →
 `plugins.entries.hermes-nim.settings.language` → `display.language` → `en`. So set it once in Hermes
@@ -310,7 +354,7 @@ Per-line overrides: drop `$HERMES_HOME/locales/es.yaml` with just the keys you w
 
 ```yaml
 rec:
-  line: "**★ recomendado** {model} — {evidence}  (según datos de terceros)"
+  line: "→ mejor para chat: {model} — {evidence}"
 ```
 
 Your overlay outranks the shipped file, so a rewording costs one line and no fork.
@@ -355,18 +399,18 @@ black-holing — and `/v1/models` calls all of them available. That gap is the r
 so it is measured, not read:
 
 ```
-**NVIDIA NIM catalog** — 85 models listed · surveyed 2 min ago
-✓ 14 answering: mistral-large-4-1t-a52b, minimax-m3.1-flash, nemotron-3-ultra-550b-a55b, …
-✗ 71 not useable:
+NVIDIA NIM catalog — 85 models listed · surveyed 7 min ago
+✔️ 17 answering: nemotron-3-ultra-550b-a55b, mistral-large-4-1t-a52b, muse-glimmer-30b, …
+🔴 68 not useable:
   • nemotron-parse — http_400
   • yi-large — not provisioned
-  • jamba-1.5-large-instruct — not provisioned
-  … 59 more (all of it in /nim json)
+  • fuyu-8b — not provisioned
+  … 63 more (all of it in /nim json)
 ```
 
-`/nim survey` measures all of them now — **16.6 s** for 85 models at 10 workers, one attempt each,
-10 s cap (a sweep at the 25 s fallback cap would take an hour). The 6h watchdog runs the same survey,
-so the board is never older than your cron.
+`/nim survey` measures all of them now — **~12 s** for 85 models at 20 workers, one attempt each,
+10 s cap (a sweep at the 25 s fallback cap would take an hour). The background scanner runs the same
+survey every `background_survey_min` (60), so the board is never older than an hour.
 
 Three rules keep that from becoming noise:
 

@@ -27,6 +27,7 @@ from . import engine, settings
 # hermes_plugins.*, so a logger called "hermes-nim.background" logs into the void — which is how the
 # scanner reported "starting" and then vanished without a single line about what it did next.
 logger = logging.getLogger(__name__)
+logging.getLogger("hermes_plugins.hermes_nim").info("DIAG bg module import, logger=%s file=%s", logger.name, __file__)
 
 
 @dataclass(frozen=True)

@@ -69,6 +69,9 @@ class Settings:
     scores_max_age_hours: float = 24.0
     # "auto" follows NIM_LANGUAGE → HERMES_LANGUAGE → display.language; or pin "en"/"es".
     language: str = "auto"
+    # Background scanner (no cron needed). 0 disables that loop.
+    background_config_scan_min: float = 10.0
+    background_survey_min: float = 60.0
 
     def with_env(self) -> "Settings":
         """Env wins over config: cron scripts have no ctx, and ad-hoc runs need to override."""
@@ -205,6 +208,8 @@ def settings() -> Settings:
         survey_catalog=_as_bool(configured.get("survey_catalog"), values.survey_catalog),
         live_attempts=_as_int(configured.get("live_attempts"), values.live_attempts),
         language=str(configured.get("language") or values.language),
+        background_config_scan_min=_as_float(configured.get("background_config_scan_min"), values.background_config_scan_min),
+        background_survey_min=_as_float(configured.get("background_survey_min"), values.background_survey_min),
     )
     return values.with_env()
 
@@ -263,6 +268,10 @@ def describe() -> str:
         t("settings.shortlist", count=len(current.shortlist_models())),
         *[t("settings.shortlist_item", model=model) for model in current.shortlist_models()],
         row("language", current.language, "language"),
+        "",
+        t("settings.g_background"),
+        row("background_config_scan_min", f"{current.background_config_scan_min:g}", "bg_config"),
+        row("background_survey_min", f"{current.background_survey_min:g}", "bg_survey"),
     ]
     return "\n".join(lines)
 

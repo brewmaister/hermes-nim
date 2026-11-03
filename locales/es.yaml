@@ -234,3 +234,6 @@ settings:
   shortlist: "  shortlist {count} ids"
   shortlist_item: "    {model}"
   none: "ninguno"
+  g_background: "▸ escáner en segundo plano"
+  why_bg_config: "cada cuánto volver a sondear tus modelos de config (0 = desactivado)"
+  why_bg_survey: "cada cuánto barrer el catálogo completo de NVIDIA (0 = desactivado)"

@@ -235,3 +235,6 @@ settings:
   shortlist: "  shortlist {count} ids"
   shortlist_item: "    {model}"
   none: "none"
+  g_background: "▸ background scanner"
+  why_bg_config: "how often to re-probe your config models (0 = off)"
+  why_bg_survey: "how often to survey the full NVIDIA catalog (0 = off)"

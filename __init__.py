@@ -25,6 +25,7 @@ from .nim.commands import (handle_cli, setup_argparse, slash_command,
                            slash_command_with_progress)
 from .nim.settings import configure as configure_settings
 from .nim.version import PLUGIN_VERSION
+from .nim.background import start_background_scanner, stop_background_scanner, BackgroundConfig
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,16 @@ logger = logging.getLogger(__name__)
 def register(ctx) -> None:
     logger.info("hermes-nim %s loaded (pid %s)", PLUGIN_VERSION, os.getpid())
     configure_settings(ctx)
+
+    # Start the background scanner — keeps state.json fresh without a cron job.
+    # Intervals come from settings (config.yaml → plugins.entries.hermes-nim.settings).
+    from .nim.settings import settings as _current_settings
+    s = _current_settings()
+    start_background_scanner(ctx, BackgroundConfig(
+        config_scan_interval_min=s.background_config_scan_min,
+        survey_interval_min=s.background_survey_min,
+    ))
+
     def _chat_command(raw_args: str = "", **kwargs):
         """Bind the plugin context so the handler can say "measuring…" before a live probe.
 
@@ -53,6 +64,9 @@ def register(ctx) -> None:
         handler_fn=handle_cli,
         description="NIM model health (hermes-nim)",
     )
+
+    # Clean shutdown: cancel the background scanner on unload/force-reload
+    ctx.on_unload(stop_background_scanner)
 
 
 __all__ = ["register"]

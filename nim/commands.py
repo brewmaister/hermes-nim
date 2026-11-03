@@ -14,19 +14,21 @@ from . import engine, render, settings, version
 from .i18n import t
 
 # Help text is localized too: a user who reads /nim in Spanish should not get English help.
-USAGE_KEYS = ("nim", "cached", "probe", "speed", "catalog", "vendor", "scores", "survey", "dead",
-              "added", "cfg", "json", "legend", "tail")
-
-
-# Grouped, not one flat run: the reader arrives with a question ("how do I check one model?"), and a
-# wall of twelve lines with equal weight makes them read all of them. Order inside a group is by how
-# often the door is used, not alphabetically.
+#
+# Written in RICH markdown (`#` headings, bullets, one pipe table) and not in MarkdownV2: the Telegram
+# adapter only routes a message through Bot API 10.1's sendRichMessage when it sees a construct
+# MarkdownV2 cannot express — a pipe table, a task list, <details> or $$ math. Ordinary replies stay on
+# MarkdownV2, where formatting is baked into the bytes and copying the text drops it. The glyph legend
+# is a real table (glyph → meaning), so it earns the rich path honestly instead of faking a trigger.
 USAGE_SECTIONS = (
     ("g_now", ("nim", "cached", "survey")),
     ("g_yours", ("probe", "probe_named", "speed")),
     ("g_numbers", ("scores", "vendor", "catalog", "dead", "added")),
     ("g_config", ("cfg", "json")),
 )
+
+GLYPH_ROWS = ("glyph_cols", "glyph_sep", "glyph_medals", "glyph_tie", "glyph_index", "glyph_arena",
+              "glyph_ttft", "glyph_tps", "glyph_new", "glyph_degraded", "glyph_dead")
 
 
 def usage() -> str:
@@ -36,8 +38,8 @@ def usage() -> str:
         lines += [t(f"usage.{key}") for key in keys]
         lines.append("")
     lines.append(t("usage.tail"))
-    lines += ["", t("usage.glyphs_head")]
-    lines += t("usage.glyph_lines").split("|")
+    lines += ["", t("usage.glyphs_head"), ""]
+    lines += [t(f"usage.{key}") for key in GLYPH_ROWS]
     return "\n".join(lines)
 
 
@@ -253,15 +255,16 @@ def _dead(report: dict) -> list[dict]:
 # ---------------------------------------------------------------------------- slash command
 
 def slash_command(raw_args: str = "", *, session_id: str = "", **_ignored) -> str:
-    """The chat door.
+    """The chat door: the render exactly as the views build it.
 
-    Decorated in standard markdown: the Telegram adapter converts every outbound message with
-    ``format_message()`` (``**bold**`` → MarkdownV2, everything else escaped). The CLI door keeps the
-    undecorated render because a terminal would print the asterisks.
+    No decoration pass. The help page carries its own markdown (headings, bullets, a pipe table), and
+    the tabular reports carry none at all — adding emphasis here would only give the rich path
+    something to mangle and the terminal something to strip. The CLI door escapes to plain text in
+    ``render.plain``; the chat door sends the markdown through untouched.
     """
     verb, extra = _verb_and_rest(raw_args)
     text, _code = dispatch(verb, extra)
-    return render.chat_markdown(text)
+    return text
 
 
 def will_measure(verb: str) -> bool:

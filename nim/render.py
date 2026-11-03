@@ -46,40 +46,69 @@ NEW_MARK = "🆕"   # appeared in /v1/models within NEW_WINDOW_DAYS, and is not 
 NEW_WINDOW_DAYS = 7.0
 
 
-def chat_markdown(text: str) -> str:
-    """The chat door's decoration, in STANDARD markdown — the gateway escapes it on the way out.
-
-    The Telegram adapter runs ``format_message()`` on every send: it converts ``**bold**`` and
-    `` `code` `` to MarkdownV2 and escapes everything else. Handing it MarkdownV2 instead means the
-    backslashes get escaped again and the reader sees ``\(\~30 s\)`` — which is exactly what happened
-    when this function tried to do the escaping itself.
-    """
-    lines: list[str] = []
-    for raw in (text or "").splitlines():
-        stripped = raw.strip()
-        if stripped.startswith("▸") or stripped.endswith("— commands") or stripped.endswith("— comandos") \
-                or stripped in ("glyphs", "glifos"):
-            lines.append(f"**{stripped}**")
-            continue
-        # A single space joins a verb to /nim; the alignment padding is many, and swallowing it made
-        # the first row read "/nim    measure" as one code span.
-        found = re.match(r"(\s*)(/nim(?: [^\s<\[]+)?(?: (?:<[^>]+>|\[[^\]]+\]))?)(.*)$", raw)
-        if found:
-            indent, command, rest = found.groups()
-            lines.append(f"{indent}`{command}`{rest}")
-            continue
-        lines.append(raw)
-    return "\n".join(lines)
+# A pipe-table separator row: `| --- | --- |`. The Telegram adapter keys its rich path off exactly this
+# shape, and the help page is the one view that wants it.
+TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$")
 
 
 def plain(text: str) -> str:
-    """Strip the emphasis for surfaces that print raw text.
+    """The terminal render: markdown in, aligned text out.
 
-    The canonical render carries markdown because chat is the primary surface; a terminal must not
-    show literal ``**`` around a title, so the CLI door calls this rather than a second renderer
-    growing a variant of every line.
+    Chat is the primary surface and the help page is written in rich markdown (headings, bullets, a
+    pipe table) because that is the only shape the Telegram adapter forwards to sendRichMessage — the
+    client renders it, so a copy keeps the formatting. A terminal has no such client, so this door has
+    to do the rendering itself: drop the markers, and turn the table back into padded columns.
     """
-    return re.sub(r"\*\*(.+?)\*\*", r"\1", text or "")
+    out: list[str] = []
+    table: list[str] = []
+
+    def flush() -> None:
+        if not table:
+            return
+        rows = [_table_cells(row) for row in table if not TABLE_SEPARATOR.match(row)]
+        if rows:
+            # Pad by DISPLAY width, not len(): an emoji is one code point but two terminal columns,
+            # so len()-padding lines the first column up and leaves every other row ragged.
+            width = [max(_display_width(cell) for cell in column) for column in zip(*rows)]
+            out.extend("  ".join(cell + " " * (w - _display_width(cell)) for cell, w in zip(row, width)).rstrip()
+                       for row in rows)
+        del table[:]
+
+    for raw in (text or "").splitlines():
+        if raw.lstrip().startswith("|"):
+            table.append(raw.strip())
+            continue
+        flush()
+        line = re.sub(r"^#{1,6}\s+", "", raw)          # headings lose their hashes, keep their words
+        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)   # bold from the older MarkdownV2 render
+        out.append(line.replace("`", ""))             # inline code reads as plain text in a terminal
+    flush()
+    return "\n".join(out)
+
+
+def _table_cells(row: str) -> list[str]:
+    return [cell.strip() for cell in row.strip().strip("|").split("|")]
+
+
+def _display_width(text: str) -> int:
+    """Columns a string occupies in a terminal.
+
+    Three cases, because a glyph is not a character: wide/full-width glyphs (🥇, 🧠) take two columns,
+    a base character followed by U+FE0F is promoted to emoji presentation and also takes two (⚠️, ✍️
+    would otherwise measure 1 and leave those rows a column short), and combining marks take none.
+    """
+    import unicodedata
+
+    width = 0
+    for index, char in enumerate(text):
+        if unicodedata.combining(char) or char in "\ufe0e\ufe0f\u200d":
+            continue
+        following = text[index + 1] if index + 1 < len(text) else ""
+        if unicodedata.east_asian_width(char) in "WF" or following == "\ufe0f":
+            width += 2
+        else:
+            width += 1
+    return width
 
 
 def board_badge(report: dict) -> str:

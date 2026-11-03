@@ -719,15 +719,18 @@ class EmojiFormatTests(unittest.TestCase):
         self.assertTrue(first.startswith(i18n.BOLD_BRAND), first)
         self.assertNotIn("🧠", first)
 
-    def test_no_view_emits_markdown(self):
-        """Every door is plain text. A stray `**` or backtick is a bug the reader sees literally."""
+    def test_the_reports_emit_no_markdown(self):
+        """A report is columns of facts. A stray `**` or backtick is a bug the reader sees literally.
+
+        The help page is the deliberate exception: it is written in rich markdown (see
+        `test_the_help_page_earns_the_rich_path`) because that is the only shape Telegram renders
+        client-side.
+        """
         report = self._report()
         views = [render.render_cached(report), render.render_probe(report),
                  render.render_board(report), render.render_catalog(report),
                  render.render_dead(report), render.render_added(report),
-                 render.render_speed(report), commands.usage()]
-        from nim import settings as settings_module
-        views.append(settings_module.describe())
+                 render.render_speed(report)]
         for text in views:
             self.assertNotIn("**", text)
             self.assertNotIn("`", text)
@@ -972,21 +975,34 @@ class LocalizationTests(unittest.TestCase):
             i18n.reset_cache()
             help_text = commands.usage()
         self.assertIn("comandos", help_text)
-        self.assertIn("tus modelos", help_text)
+        self.assertIn("Tus modelos", help_text)
         with mock.patch.dict(os.environ, {"HERMES_LANGUAGE": "en"}):
             i18n.reset_cache()
             self.assertIn("measure every listed model", commands.usage())
 
-    def test_the_chat_door_speaks_standard_markdown(self):
-        """`format_message()` on the way out converts **bold** and escapes the rest — so send that, not
-        MarkdownV2: pre-escaped text gets escaped twice and the reader sees backslashes."""
-        formatted = render.chat_markdown(commands.usage())
-        self.assertIn("**▸ now**", formatted)
-        self.assertIn("`/nim cached`", formatted)
-        self.assertNotIn("\\(", formatted)           # no pre-escaping: the adapter owns that
-        self.assertNotIn("\\~", formatted)
-        # the CLI door stays undecorated
-        self.assertNotIn("**", commands.usage())
+    def test_the_help_page_earns_the_rich_path(self):
+        """sendRichMessage only fires for a construct MarkdownV2 cannot express.
+
+        The adapter's gate is: a pipe-table separator, a GFM task list, <details>, or $$ math. Anything
+        else stays on MarkdownV2, where the formatting is baked into the bytes and copying the message
+        loses it. The glyph legend is a real table, so the help page passes the gate on its merits.
+        """
+        page, _code = commands.dispatch("help", [])
+        lines = page.splitlines()
+        self.assertTrue(any(render.TABLE_SEPARATOR.match(line) for line in lines),
+                        "no pipe table: the adapter would send this as MarkdownV2")
+        self.assertTrue(any(line.startswith("#") for line in lines), "no heading")
+        self.assertIn("`", page)                           # inline code, rendered client-side
+        self.assertNotIn("\\", page)                       # never pre-escaped: the client parses raw
+
+    def test_the_terminal_render_undoes_the_markdown(self):
+        """`hermes nim help` in a shell: no hashes, no backticks, and the table back as columns."""
+        flat = render.plain(commands.usage())
+        self.assertNotIn("#", flat)
+        self.assertNotIn("`", flat)
+        self.assertNotIn("|", flat)                        # table rows became aligned columns
+        self.assertIn("first three in list order", flat)    # the table's content survived
+        self.assertIn("measure every listed model", flat)
 
     def test_missing_key_falls_back_to_english_not_to_the_key(self):
         from nim import i18n

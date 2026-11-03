@@ -214,31 +214,30 @@ def settings() -> Settings:
     return values.with_env()
 
 
-COLUMN = 27   # where the reason starts; wide enough for the longest key plus a one-word value
-
-
 def describe() -> str:
-    """The settings block under /nim help — translated, because half a translated page is a bug."""
+    """The settings block under /nim help — translated, because half a translated page is a bug.
+
+    Rich markdown on purpose: this block and the command list above it are the two things a reader
+    copies out of Telegram, and only the rich path sends raw markdown the client renders itself, so a
+    copy keeps headings and monospace. It also means no column padding — rich rendering collapses runs
+    of spaces, so a padded column would arrive ragged. One bullet per setting instead.
+    """
     from .i18n import t
 
     current = settings()
-    models = ", ".join(current.shortlist_models()) or t("settings.none")
     # Grouped the same way as the verbs: measuring, the live door, the survey, ranking, files. Every
     # setting keeps the reason it holds its value — a knob whose why is missing is a knob you cannot
-    # safely change — but the reason is now a short clause, not a sentence with three semicolons.
-    # One column for the key and its value, one for the reason. Padding in code, not with spaces in the
-    # translations: a translator that changes a word must not shift the geometry of the column.
+    # safely change.
     def row(key: str, value: object, why: str | None = None, **fmt: object) -> str:
-        head = f"  {key} {value}"
+        head = f"- `{key}` {value}"
         if not why:
             return head
         reason = t(f"settings.why_{why}", **{name: str(value) for name, value in fmt.items()})
-        if len(head) >= COLUMN:
-            return f"{head}\n{' ' * (COLUMN + 2)}{reason}"
-        return f"{head.ljust(COLUMN)}{reason}"
+        return f"{head} — {reason}"
 
     lines = [
         t("settings.intro"),
+        t("settings.intro_sub"),
         "",
         t("settings.g_measure"),
         row("ttft_seconds", f"{current.ttft_seconds:g}", "ttft"),

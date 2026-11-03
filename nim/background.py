@@ -24,6 +24,8 @@ from typing import Optional
 from . import engine, settings
 
 logger = logging.getLogger("hermes-nim.background")
+print("hermes-nim.background: module loaded", flush=True)
+print(f"hermes-nim.background: logger={logger.name} level={logger.level} effective={logger.getEffectiveLevel()}", flush=True)
 
 
 @dataclass(frozen=True)

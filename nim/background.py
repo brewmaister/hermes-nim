@@ -131,8 +131,9 @@ def start_background_scanner(ctx, cfg: Optional[BackgroundConfig] = None) -> Non
     unload/force reload cancels it cleanly.
     """
     global _task
+    logger.info("hermes-nim: start_background_scanner called, _task=%s", _task)
     if _task is not None and not _task.done():
-        logger.debug("hermes-nim: background scanner already running")
+        logger.info("hermes-nim: background scanner already running, skipping")
         return
 
     cfg = cfg or BackgroundConfig()

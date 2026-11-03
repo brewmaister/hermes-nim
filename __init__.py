@@ -51,14 +51,19 @@ def register(ctx) -> None:
             survey_interval_min=_settings.background_survey_min,
         ))
 
-    # Try to start now (gateway reload case)
+    # Where the loop is decides how the scanner starts. Plugin register() often runs on a loader
+    # worker thread with no loop (so `get_running_loop()` raises), and `gateway:startup` alone would
+    # then only fire on the NEXT gateway start — the scanner silently never ran after a reload.
+    # session:start / agent:start fire on the loop for every turn, and start_background_scanner is
+    # idempotent, so the first message after a reload is what brings the scanner up.
+    import asyncio
+
     try:
-        import asyncio
         asyncio.get_running_loop()
         _do_start_scanner()
     except RuntimeError:
-        # No loop yet (fresh gateway startup) — hook will start it
-        ctx.register_hook("gateway:startup", lambda _ctx: _do_start_scanner())
+        for hook in ("gateway:startup", "session:start", "agent:start"):
+            ctx.register_hook(hook, lambda _payload: _do_start_scanner())
 
     def _chat_command(raw_args: str = "", **kwargs):
         """Bind the plugin context so the handler can say "measuring…" before a live probe.

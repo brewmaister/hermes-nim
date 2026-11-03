@@ -146,45 +146,22 @@ def start_background_scanner(ctx, cfg: Optional[BackgroundConfig] = None) -> Non
         except Exception as exc:  # noqa: BLE001
             logger.exception("hermes-nim: background scanner crashed: %s", exc)
 
-    # The gateway event loop may not be running yet at plugin load time.
-    # Try to get it; if not available, defer until the loop starts.
+    # Try to get the running event loop; if not available, use ctx.spawn_task
+    # which handles the loop lookup internally. The gateway's loop is usually
+    # running by the time plugins load, but CLI invocations (hermes nim) don't
+    # have a loop, so we catch that case.
     try:
         loop = asyncio.get_running_loop()
+        _task = loop.create_task(_runner(), name=f"plugin:{ctx.plugin_id}:background-scanner")
+        logger.info(
+            "hermes-nim: background scanner started (config_every=%.1fm survey_every=%.1fm)",
+            cfg.config_scan_interval_min,
+            cfg.survey_interval_min,
+        )
     except RuntimeError:
-        # No running loop yet — schedule for when one starts.
-        # We use a simple callback on the next tick of the gateway's loop
-        # by hooking into the gateway's startup sequence via a one-shot task.
-        def _deferred_start():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                # Still no loop; give up (will be retried on next plugin reload)
-                logger.warning("hermes-nim: no event loop available, background scanner not started")
-                return
-            global _task
-            if _task is None or _task.done():
-                _task = loop.create_task(_runner(), name=f"plugin:{ctx.plugin_id}:background-scanner")
-                logger.info(
-                    "hermes-nim: background scanner started (config_every=%.1fm survey_every=%.1fm)",
-                    cfg.config_scan_interval_min,
-                    cfg.survey_interval_min,
-                )
-        # Hook into gateway's event loop when it becomes available
-        import threading
-        def _wait_for_loop():
-            # Poll for the loop to appear (gateway startup is fast)
-            for _ in range(50):  # 5 seconds max
-                try:
-                    asyncio.get_running_loop()
-                    break
-                except RuntimeError:
-                    pass
-                threading.Event().wait(0.1)
-            _deferred_start()
-        threading.Thread(target=_wait_for_loop, daemon=True).start()
-        return
-
-    _task = loop.create_task(_runner(), name=f"plugin:{ctx.plugin_id}:background-scanner")
+        # No running loop (e.g. CLI context) — ctx.spawn_task will fail too,
+        # so we just log and skip. The gateway reload will start it properly.
+        logger.info("hermes-nim: no event loop at load, background scanner will start on gateway reload")
     logger.info(
         "hermes-nim: background scanner started (config_every=%.1fm survey_every=%.1fm)",
         cfg.config_scan_interval_min,

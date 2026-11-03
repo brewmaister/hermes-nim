@@ -38,6 +38,8 @@ def register(ctx) -> None:
     # Intervals come from settings (config.yaml → plugins.entries.hermes-nim.settings).
     from .nim.settings import settings as _current_settings
     s = _current_settings()
+    logger.info("hermes-nim: starting background scanner (config_every=%.1fm survey_every=%.1fm)",
+                s.background_config_scan_min, s.background_survey_min)
     start_background_scanner(ctx, BackgroundConfig(
         config_scan_interval_min=s.background_config_scan_min,
         survey_interval_min=s.background_survey_min,

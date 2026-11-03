@@ -1,180 +1,164 @@
 """Background scanner: keeps the NIM state fresh without a cron job.
 
-The scanner runs on the gateway's event loop as a supervised task. It does two things
-on independent timers:
+Two independent loops, both writing the same ``state.json`` the engine already uses:
 
-1. Config scan — probes the models your config actually uses (fallback chain + shortlist)
-   every N minutes. This is the data the fallback chain and /nim probe read.
+1. **Config scan** — the models your config points at (fallback chain + shortlist).
+2. **Survey scan** — every model NVIDIA lists.
 
-2. Survey scan — probes every model NVIDIA lists every M minutes. This is what keeps
-   /nim catalog, /nim added, /nim dead, and the podium fresh.
-
-Both write the same state.json the engine uses, so there's no second source of truth.
-The cron job becomes a formatter only — it reads the already-fresh state and sends
-a message if anything changed.
+Why a plain daemon thread and not ``ctx.spawn_task`` or a startup hook: plugin ``register()`` runs on
+a loader worker thread that has no running event loop (``get_running_loop()`` raises there), and a
+``gateway:startup`` hook registered during a reload never fires again because the gateway already
+started. The result was a scanner that logged "starting" and then probed nothing at all. A thread
+with its own ``asyncio.run`` loop starts from every load path — first boot, force reload, CLI — and
+asks the host for nothing.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
 from . import engine, settings
 
 # __name__, not a hand-written name: the gateway installs its handlers on loggers under
-# hermes_plugins.*, so a logger called "hermes-nim.background" logs into the void — which is how the
-# scanner reported "starting" and then vanished without a single line about what it did next.
+# hermes_plugins.*, so a logger called "hermes-nim.background" logs into the void.
 logger = logging.getLogger(__name__)
-logging.getLogger("hermes_plugins.hermes_nim").info("DIAG bg module import, logger=%s file=%s", logger.name, __file__)
 
 
 @dataclass(frozen=True)
 class BackgroundConfig:
     """Timing for the two independent scan loops."""
 
-    # How often to scan your config models (fallback chain + shortlist).
-    # 10 min default: fast enough to catch a stalled fallback before you notice,
-    # slow enough that a 10s TTFT cap on 11 models costs < 2% of a CPU.
+    # How often to scan your config models (fallback chain + shortlist). 10 min catches a stalled
+    # fallback before you notice, and costs well under 2% of one core.
     config_scan_interval_min: float = 10.0
-
-    # How often to survey the whole catalog (all 85 models).
-    # 60 min default: NVIDIA adds/removes models maybe weekly; 1h is plenty.
+    # How often to survey the whole catalog. NVIDIA adds or removes models maybe weekly.
     survey_interval_min: float = 60.0
-
-    # First run delay after plugin load — stagger so we don't hammer NIM on startup.
+    # First run delay after load, so a gateway restart does not fire ~96 probes at once.
     initial_delay_sec: float = 5.0
 
 
-async def _scan_config_models(s: settings.Settings) -> dict:
-    """Scan only the models your config points at (plus shortlist)."""
-    # engine.configured_models takes an optional config_path; state_dir is not a config path.
-    used = engine.configured_models()
-    # Merge configured with shortlist for the scan targets
-    extra = s.shortlist_models()
+async def _scan_config_models(current: settings.Settings) -> dict:
+    """Probe only the models your config points at (plus the shortlist)."""
     return await asyncio.to_thread(
         engine.scan,
-        base=s.api_base,
-        ttft=s.ttft_seconds,
-        attempts=s.attempts,
-        stagger=s.stagger_seconds,
-        extra=extra,
-        configured_dir=s.state_dir,
-        recheck_ttft=s.recheck_ttft_seconds,
+        base=current.api_base,
+        ttft=current.ttft_seconds,
+        attempts=current.attempts,
+        stagger=current.stagger_seconds,
+        extra=current.shortlist_models(),
+        configured_dir=current.state_dir,
+        recheck_ttft=current.recheck_ttft_seconds,
         survey=False,
     )
 
 
-async def _scan_full_survey(s: settings.Settings) -> dict:
-    """Scan every model NVIDIA lists."""
+async def _scan_full_survey(current: settings.Settings) -> dict:
+    """Probe every model NVIDIA lists."""
     return await asyncio.to_thread(
         engine.scan,
-        base=s.api_base,
-        ttft=s.survey_ttft_seconds,
-        attempts=s.survey_attempts,
-        stagger=s.stagger_seconds,
-        extra=s.shortlist_models(),
-        configured_dir=s.state_dir,
+        base=current.api_base,
+        ttft=current.survey_ttft_seconds,
+        attempts=current.survey_attempts,
+        stagger=current.stagger_seconds,
+        extra=current.shortlist_models(),
+        configured_dir=current.state_dir,
         recheck_ttft=0.0,
         survey=True,
-        survey_ttft=s.survey_ttft_seconds,
+        survey_ttft=current.survey_ttft_seconds,
     )
 
 
-async def _background_loop(cfg: BackgroundConfig) -> None:
-    """Run both scan loops until cancelled."""
-    # Initial delay to let the gateway settle
-    await asyncio.sleep(cfg.initial_delay_sec)
+async def _sleep(seconds: float, stop: threading.Event) -> bool:
+    """Sleep in slices so a stop request lands promptly. True means it is time to exit."""
+    remaining = max(0.0, seconds)
+    while remaining > 0:
+        if stop.is_set():
+            return True
+        await asyncio.sleep(min(1.0, remaining))
+        remaining -= 1.0
+    return stop.is_set()
 
-    # Load settings once per loop iteration (they can change via config reload)
+
+async def _background_loop(cfg: BackgroundConfig, stop: threading.Event) -> None:
+    """Run both loops until *stop* is set."""
+    if await _sleep(cfg.initial_delay_sec, stop):
+        return
     next_config_scan = 0.0
     next_survey = 0.0
-    loop_start = asyncio.get_event_loop().time()
+    started = asyncio.get_event_loop().time()
 
-    while True:
-        now = asyncio.get_event_loop().time()
-        elapsed = now - loop_start
+    while not stop.is_set():
+        elapsed = asyncio.get_event_loop().time() - started
+        current = settings.settings()
 
-        # Load current settings (respects live config changes)
-        s = settings.settings()
-
-        # --- Config scan ---
-        if elapsed >= next_config_scan:
-            logger.info("hermes-nim: starting config scan")
+        if cfg.config_scan_interval_min > 0 and elapsed >= next_config_scan:
+            logger.info("hermes-nim: config scan starting")
             try:
-                await _scan_config_models(s)
-                logger.info("hermes-nim: config scan done")
-            except Exception as exc:  # noqa: BLE001 - a failed scan must not kill the loop
+                report = await _scan_config_models(current)
+                logger.info("hermes-nim: config scan done (%d probed)",
+                            len(report.get("probed") or []))
+            except Exception as exc:  # noqa: BLE001 - one bad sweep must not kill the loop
                 logger.warning("hermes-nim: config scan failed: %s", exc)
             next_config_scan = elapsed + cfg.config_scan_interval_min * 60
 
-        # --- Survey scan ---
-        if elapsed >= next_survey:
-            logger.info("hermes-nim: starting catalog survey")
+        if cfg.survey_interval_min > 0 and elapsed >= next_survey:
+            logger.info("hermes-nim: catalog survey starting")
             try:
-                await _scan_full_survey(s)
-                logger.info("hermes-nim: catalog survey done")
+                report = await _scan_full_survey(current)
+                survey = report.get("survey") or {}
+                logger.info("hermes-nim: catalog survey done (%s of %s online)",
+                            survey.get("online"), survey.get("listed"))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("hermes-nim: catalog survey failed: %s", exc)
             next_survey = elapsed + cfg.survey_interval_min * 60
 
-        # Sleep until the next scheduled scan (whichever is sooner)
-        next_due = min(next_config_scan, next_survey)
-        sleep_for = max(1.0, next_due - elapsed)
-        await asyncio.sleep(sleep_for)
+        due = [moment for moment, interval in (
+            (next_config_scan, cfg.config_scan_interval_min),
+            (next_survey, cfg.survey_interval_min),
+        ) if interval > 0]
+        if not due:  # both loops disabled: nothing left to wait for
+            return
+        if await _sleep(min(due) - elapsed, stop):
+            return
 
 
-_task: Optional[asyncio.Task] = None
+_stop = threading.Event()
+_thread: Optional[threading.Thread] = None
 
 
-def start_background_scanner(ctx, cfg: Optional[BackgroundConfig] = None) -> None:
-    """Spawn the supervised background scanner task.
+def _thread_main(cfg: BackgroundConfig) -> None:
+    try:
+        asyncio.run(_background_loop(cfg, _stop))
+    except Exception:  # noqa: BLE001 - a dead scanner must not take the gateway with it
+        logger.exception("hermes-nim: background scanner crashed")
 
-    Called from plugin.register(). The task is attached to the plugin context so
-    unload/force reload cancels it cleanly.
-    """
-    global _task
-    if _task is not None and not _task.done():
+
+def start_background_scanner(ctx=None, cfg: Optional[BackgroundConfig] = None) -> None:
+    """Start the scanner thread, once. A second call while it runs does nothing."""
+    global _thread
+    if _thread is not None and _thread.is_alive():
         logger.debug("hermes-nim: background scanner already running")
         return
-
     cfg = cfg or BackgroundConfig()
-
-    async def _runner():
-        try:
-            await _background_loop(cfg)
-        except asyncio.CancelledError:
-            logger.info("hermes-nim: background scanner cancelled")
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("hermes-nim: background scanner crashed: %s", exc)
-
-    # Try to get the running event loop; if not available, use ctx.spawn_task
-    # which handles the loop lookup internally. The gateway's loop is usually
-    # running by the time plugins load, but CLI invocations (hermes nim) don't
-    # have a loop, so we catch that case.
-    try:
-        loop = asyncio.get_running_loop()
-        _task = loop.create_task(_runner(), name=f"plugin:{ctx.plugin_id}:background-scanner")
-        logger.info(
-            "hermes-nim: background scanner started (config_every=%.1fm survey_every=%.1fm)",
-            cfg.config_scan_interval_min,
-            cfg.survey_interval_min,
-        )
-    except RuntimeError:
-        # No running loop (e.g. CLI context) — ctx.spawn_task will fail too,
-        # so we just log and skip. The gateway reload will start it properly.
-        logger.info("hermes-nim: no event loop at load, background scanner will start on gateway reload")
+    _stop.clear()
+    _thread = threading.Thread(target=_thread_main, args=(cfg,),
+                               name="hermes-nim-scanner", daemon=True)
+    _thread.start()
+    logger.info("hermes-nim: background scanner started (%s min config / %s min survey)",
+                cfg.config_scan_interval_min, cfg.survey_interval_min)
 
 
 def stop_background_scanner() -> None:
-    """Cancel the scanner task (called on unload)."""
-    global _task
-    if _task is not None and not _task.done():
-        _task.cancel()
-        _task = None
-        logger.info("hermes-nim: background scanner stopped")
+    """Ask the scanner thread to finish: an in-flight sweep completes, then the loop exits."""
+    global _thread
+    if _thread is not None and _thread.is_alive():
+        _stop.set()
+        logger.info("hermes-nim: background scanner stopping")
+    _thread = None
 
 
 __all__ = ["BackgroundConfig", "start_background_scanner", "stop_background_scanner"]

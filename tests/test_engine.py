@@ -1004,6 +1004,33 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn("first three in list order", flat)    # the table's content survived
         self.assertIn("measure every listed model", flat)
 
+    def test_the_background_scanner_runs_and_stops(self):
+        """A thread with its own loop, because register() has no running loop to hand."""
+        import threading
+        import time
+
+        from nim import background
+
+        started = threading.Event()
+        real_scan = background._scan_config_models
+
+        async def fake_scan(_current):
+            started.set()
+            return {"probed": []}
+
+        background._scan_config_models = fake_scan
+        try:
+            background.start_background_scanner(
+                None, background.BackgroundConfig(config_scan_interval_min=0.02,
+                                                  survey_interval_min=0, initial_delay_sec=0))
+            self.assertTrue(started.wait(5), "the scanner thread never reached a config scan")
+            background.stop_background_scanner()
+            time.sleep(0.2)
+            self.assertIsNone(background._thread)          # stop() clears the handle
+        finally:
+            background._scan_config_models = real_scan
+            background.stop_background_scanner()
+
     def test_missing_key_falls_back_to_english_not_to_the_key(self):
         from nim import i18n
 

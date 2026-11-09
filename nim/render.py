@@ -645,8 +645,8 @@ def render_board(report: dict, limit: int = 14) -> str:
             lines.append(f"{mark} {short_model(model)} — " + " · ".join(bits))
         if len(chat) > limit:
             lines.append(t("foot.more", hidden=len(chat) - limit))
-        if (pick is not None and pick_model not in set(chat)
-                and pick_model in set(report.get("catalog") or [])):
+        if pick is not None and pick_model not in set(chat) \
+                and pick_model in set(report.get("catalog") or []):
             # Named even though it is not yours: an unconfigured winner is a one-line config change,
             # not a rumour. Everything except the id comes from the same evidence as any other row.
             winner = str(pick.get("model") or "")
@@ -661,6 +661,13 @@ def render_board(report: dict, limit: int = 14) -> str:
                 outside.append(write)
             outside.append(t("board.pick_unconfigured"))
             lines.append(" — ".join([outside[0], " · ".join(outside[1:])]))
+        elif pick is not None:
+            # The pick is already a row above, but the medal is a POSITION in the score order while
+            # the pick applies the speed gate. When the top-scored model is slow (17 s first byte) the
+            # board used to print no footer at all, so the reader saw a slow 🥇 and no answer to
+            # "which one do I point Hermes at?". The footer is the gate's verdict; it belongs on the
+            # board whether the winner is inside the list or not.
+            lines.append(best_line(report))
     if utility:
         # one per line: a comma-separated run of ids is a paragraph you have to decode, not a list
         lines += ["", t("board.section_utility")]

@@ -816,6 +816,32 @@ class CapabilityTests(unittest.TestCase):
         self.assertNotIn("🧠", plain)             # no score, and no fake one either
         self.assertNotIn("30B ·", plain)          # the id already says 30b; the row does not repeat it
 
+    def test_the_board_always_names_the_chat_pick_even_when_it_is_already_a_row(self):
+        """A medal is a position in the score order; the pick is the one that passes the speed gate.
+
+        The board used to print the footer only when the winner was NOT in the chat list, so a board
+        led by a slow 🥇 (17 s first byte) said nothing about which model to actually use.
+        """
+        survey = {"at": engine._now_iso(), "listed": 3, "measured": 3, "online": 3}
+        ids = ("stepfun-ai/step-5-preview", "minimaxai/minimax-m3.1-flash",
+               "nvidia/nemotron-3.5-lightning-30b-a3b")
+        report = _fake_report({model: "ok" for model in ids}, catalog=ids, survey=survey)
+        slow = report["models"]["stepfun-ai/step-5-preview"]
+        slow["ttft_s"] = 17.3
+        slow["trials"] = ["ok:17.3"]
+        fast = report["models"]["minimaxai/minimax-m3.1-flash"]
+        fast["ttft_s"] = 1.9
+        fast["trials"] = ["ok:1.9"]
+        report["models"]["nvidia/nemotron-3.5-lightning-30b-a3b"]["ttft_s"] = 1.2
+
+        with install_scores():
+            text = render.render_board(report)
+
+        self.assertIn("→ best for chat:", text)
+        pick_line = next(line for line in text.splitlines() if "best for chat" in line)
+        self.assertIn("minimaxai/minimax-m3.1-flash", pick_line)
+        self.assertNotIn("step-5-preview", pick_line)
+
     def test_the_board_survives_a_report_with_no_survey(self):
         report = _fake_report({"a/one": "ok"}, catalog=("a/one",))
         self.assertIn("never surveyed", render.render_board(report))
